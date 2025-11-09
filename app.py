@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, redirect, url_for, session
 from flask_cors import CORS
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import os
@@ -21,7 +22,7 @@ app = Flask(__name__,
 
 # ===== SESSION CONFIGURATION FOR AUTHENTICATION =====
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
-app.permanent_session_lifetime = timedelta(hours=2)  # Session expires after 2 hours
+app.permanent_session_lifetime = timedelta(hours=2)
 
 CORS(app, resources={
     r"/*": {
@@ -31,13 +32,36 @@ CORS(app, resources={
     }
 })
 
-# ===== DATABASE CONFIGURATION =====
+# ===== DATABASE CONFIGURATION WITH CONNECTION POOLING =====
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Create connection pool to manage connections properly
+try:
+    connection_pool = psycopg2.pool.SimpleConnectionPool(
+        1,  # Minimum connections
+        10, # Maximum connections
+        DATABASE_URL
+    )
+    if connection_pool:
+        print("Connection pool created successfully!")
+except Exception as e:
+    print(f"Error creating connection pool: {e}")
+    connection_pool = None
+
 def get_db_connection():
-    """Create a database connection"""
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    """Get a connection from the pool"""
+    if connection_pool:
+        return connection_pool.getconn()
+    else:
+        # Fallback to direct connection if pool fails
+        return psycopg2.connect(DATABASE_URL)
+
+def return_db_connection(conn):
+    """Return connection to the pool"""
+    if connection_pool:
+        connection_pool.putconn(conn)
+    else:
+        conn.close()
 
 # ===== ADMIN AUTHENTICATION =====
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -48,13 +72,11 @@ STREAM_DELAY = 0.03
 # ===== API KEY ROTATION SYSTEM =====
 class GroqAPIManager:
     def __init__(self):
-        # Load all API keys from .env
         self.api_keys = [
             os.environ.get("GROQ_API_KEY_1"),
             os.environ.get("GROQ_API_KEY_2"),
             os.environ.get("GROQ_API_KEY_3"),
         ]
-        # Filter out None values
         self.api_keys = [key for key in self.api_keys if key]
         
         if not self.api_keys:
@@ -66,17 +88,14 @@ class GroqAPIManager:
         print(f"Loaded {len(self.api_keys)} API keys")
     
     def get_client(self):
-        """Get current Groq client"""
         return self.clients[self.current_key_index]
     
     def rotate_key(self):
-        """Switch to next API key"""
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         print(f"Rotated to API key {self.current_key_index + 1}/{len(self.api_keys)}")
         return self.clients[self.current_key_index]
     
     def make_request(self, messages, model, temperature, max_tokens, stream=True):
-        """Make API request with automatic key rotation on rate limit"""
         for attempt in range(len(self.api_keys)):
             try:
                 client = self.get_client()
@@ -94,108 +113,116 @@ class GroqAPIManager:
             except Exception as e:
                 error_str = str(e).lower()
                 
-                # Check if it's a rate limit error
                 if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
                     print(f"Rate limit hit on key {self.current_key_index + 1}, rotating...")
                     
-                    # Try next key if available
                     if attempt < len(self.api_keys) - 1:
                         self.rotate_key()
                         continue
                     else:
                         raise Exception("All API keys have reached their rate limit")
                 else:
-                    # Different error, don't rotate
                     raise e
         
         raise Exception("All API keys failed")
 
-# Initialize API manager
 groq_manager = GroqAPIManager()
 
 # ===== DATABASE SETUP =====
 def init_db():
     """Initialize PostgreSQL database with tables and sample data"""
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    # Create conversations table
-    c.execute('''CREATE TABLE IF NOT EXISTS conversations
-                 (id SERIAL PRIMARY KEY,
-                  user_message TEXT,
-                  bot_response TEXT,
-                  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Create knowledge_base table
-    c.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
-                 (id SERIAL PRIMARY KEY,
-                  category TEXT,
-                  question TEXT,
-                  answer TEXT,
-                  source TEXT,
-                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-    
-    # Check if sample data already exists
-    c.execute('SELECT COUNT(*) FROM knowledge_base')
-    count = c.fetchone()[0]
-    
-    # Only insert sample data if table is empty
-    if count == 0:
-        sample_data = [
-            ('admissions', 'How do I apply to NCIRL?', 
-             'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
-             'NCIRL Student Hub'),
-            ('library', 'What are the library opening hours?', 
-             'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
-             'NCIRL Student Hub'),
-            ('support', 'Where can I get academic support?', 
-             'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
-             'NCIRL Student Hub'),
-            ('facilities', 'What facilities are available on campus?', 
-             'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
-             'NCIRL Student Hub'),
-        ]
+    conn = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
         
-        c.executemany('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)', 
-                      sample_data)
-    
-    conn.commit()
-    conn.close()
-    print("Database initialized successfully!")
+        c.execute('''CREATE TABLE IF NOT EXISTS conversations
+                     (id SERIAL PRIMARY KEY,
+                      user_message TEXT,
+                      bot_response TEXT,
+                      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        c.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
+                     (id SERIAL PRIMARY KEY,
+                      category TEXT,
+                      question TEXT,
+                      answer TEXT,
+                      source TEXT,
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        c.execute('SELECT COUNT(*) FROM knowledge_base')
+        count = c.fetchone()[0]
+        
+        if count == 0:
+            sample_data = [
+                ('admissions', 'How do I apply to NCIRL?', 
+                 'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
+                 'NCIRL Student Hub'),
+                ('library', 'What are the library opening hours?', 
+                 'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
+                 'NCIRL Student Hub'),
+                ('support', 'Where can I get academic support?', 
+                 'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
+                 'NCIRL Student Hub'),
+                ('facilities', 'What facilities are available on campus?', 
+                 'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
+                 'NCIRL Student Hub'),
+            ]
+            
+            c.executemany('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)', 
+                          sample_data)
+        
+        conn.commit()
+        print("Database initialized successfully!")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            return_db_connection(conn)
 
-# Initialize database on startup
 try:
     init_db()
 except Exception as e:
-    print(f"Database initialization error: {e}")
+    print(f"Failed to initialize database: {e}")
 
 # ===== HELPER FUNCTIONS =====
 def get_knowledge_context():
-    """Get all knowledge from database for AI context"""
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('SELECT category, question, answer FROM knowledge_base')
-    knowledge = c.fetchall()
-    conn.close()
-    
-    context = "You are a helpful NCIRL (National College of Ireland) student support assistant. Use this knowledge base to answer questions:\n\n"
-    for cat, q, a in knowledge:
-        context += f"Category: {cat}\nQ: {q}\nA: {a}\n\n"
-    
-    return context
+    conn = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('SELECT category, question, answer FROM knowledge_base')
+        knowledge = c.fetchall()
+        
+        context = "You are a helpful NCIRL (National College of Ireland) student support assistant. Use this knowledge base to answer questions:\n\n"
+        for cat, q, a in knowledge:
+            context += f"Category: {cat}\nQ: {q}\nA: {a}\n\n"
+        
+        return context
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 def save_conversation(user_msg, bot_resp):
-    """Save conversation to database"""
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('INSERT INTO conversations (user_message, bot_response) VALUES (%s, %s)',
-              (user_msg, bot_resp))
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute('INSERT INTO conversations (user_message, bot_response) VALUES (%s, %s)',
+                  (user_msg, bot_resp))
+        conn.commit()
+    except Exception as e:
+        print(f"Error saving conversation: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 # ===== AUTHENTICATION DECORATOR =====
 def admin_required(f):
-    """Decorator to protect admin routes"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('admin_logged_in'):
@@ -206,7 +233,6 @@ def admin_required(f):
 # ===== AUTHENTICATION ROUTES =====
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    """Admin login page and authentication"""
     if session.get('admin_logged_in'):
         return redirect(url_for('admin'))
     
@@ -224,7 +250,6 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    """Logout and clear session"""
     session.pop('admin_logged_in', None)
     return redirect(url_for('admin_login'))
 
@@ -233,7 +258,6 @@ def admin_logout():
 def index():
     return render_template('index.html')
 
-# ===== PROTECTED ADMIN ROUTE =====
 @app.route('/admin')
 @admin_required
 def admin():
@@ -308,7 +332,6 @@ def chat():
 # ===== API KEY STATUS ROUTES =====
 @app.route('/api-status', methods=['GET'])
 def api_status():
-    """Check current API key status"""
     return jsonify({
         'current_key': groq_manager.current_key_index + 1,
         'total_keys': len(groq_manager.api_keys),
@@ -317,7 +340,6 @@ def api_status():
 
 @app.route('/rotate-key', methods=['POST'])
 def manual_rotate():
-    """Manually rotate to next API key"""
     groq_manager.rotate_key()
     return jsonify({
         'message': 'Key rotated successfully',
@@ -325,10 +347,11 @@ def manual_rotate():
         'total_keys': len(groq_manager.api_keys)
     })
 
-# ===== KNOWLEDGE BASE ROUTES (PROTECTED) =====
+# ===== KNOWLEDGE BASE ROUTES =====
 @app.route('/add_knowledge', methods=['POST'])
 @admin_required
 def add_knowledge():
+    conn = None
     try:
         data = request.json
         category = data.get('category', '')
@@ -341,17 +364,21 @@ def add_knowledge():
         c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
                   (category, question, answer, source))
         conn.commit()
-        conn.close()
         
         return jsonify({'message': 'Knowledge added successfully'}), 200
         
     except Exception as e:
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @app.route('/upload_csv', methods=['POST'])
 @admin_required
 def upload_csv():
-    """Upload CSV file with bulk knowledge entries"""
+    conn = None
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
@@ -402,7 +429,6 @@ def upload_csv():
                 errors.append(f"Row {row_num}: {str(e)}")
         
         conn.commit()
-        conn.close()
         
         return jsonify({
             'message': f'Successfully imported {added_count} entries',
@@ -412,11 +438,15 @@ def upload_csv():
         }), 200
         
     except Exception as e:
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @app.route('/download_sample_csv', methods=['GET'])
 def download_sample_csv():
-    """Download a sample CSV template"""
     sample_csv = """category,question,answer,source
 admissions,What are the application deadlines?,Applications for undergraduate courses close on February 1st. Postgraduate applications are accepted year-round.,NCIRL Admissions
 fees,How much are the tuition fees?,Undergraduate EU students pay approximately €3000 per year. Non-EU and postgraduate fees vary by program.,NCIRL Finance Office
@@ -432,12 +462,12 @@ courses,What programs does NCIRL offer?,NCIRL offers programs in Business Comput
 @app.route('/get_knowledge', methods=['GET'])
 @admin_required
 def get_knowledge():
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor(cursor_factory=RealDictCursor)
         c.execute('SELECT id, category, question, answer, source, created_at FROM knowledge_base ORDER BY created_at DESC')
         rows = c.fetchall()
-        conn.close()
         
         knowledge = []
         for row in rows:
@@ -454,6 +484,9 @@ def get_knowledge():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @app.route('/update_knowledge/<int:id>', methods=['PUT', 'OPTIONS'])
 @admin_required
@@ -461,6 +494,7 @@ def update_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
+    conn = None
     try:
         data = request.json
         conn = get_db_connection()
@@ -470,10 +504,14 @@ def update_knowledge(id):
                      WHERE id=%s''',
                   (data['category'], data['question'], data['answer'], data['source'], id))
         conn.commit()
-        conn.close()
         return jsonify({'message': 'Knowledge updated successfully'}), 200
     except Exception as e:
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
 
 @app.route('/delete_knowledge/<int:id>', methods=['DELETE', 'OPTIONS'])
 @admin_required
@@ -481,26 +519,30 @@ def delete_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor()
         c.execute('DELETE FROM knowledge_base WHERE id=%s', (id,))
         conn.commit()
-        conn.close()
         return jsonify({'message': 'Knowledge deleted successfully'}), 200
     except Exception as e:
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
 
-# ===== HISTORY ROUTE =====
 @app.route('/history', methods=['GET'])
 @admin_required
 def get_history():
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor(cursor_factory=RealDictCursor)
         c.execute('SELECT user_message, bot_response, timestamp FROM conversations ORDER BY timestamp DESC LIMIT 50')
         rows = c.fetchall()
-        conn.close()
         
         history = []
         for row in rows:
@@ -514,6 +556,15 @@ def get_history():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if conn:
+            return_db_connection(conn)
+
+# ===== CLEANUP ON SHUTDOWN =====
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    if connection_pool:
+        connection_pool.closeall()
 
 # ===== RUN APPLICATION =====
 if __name__ == '__main__':
