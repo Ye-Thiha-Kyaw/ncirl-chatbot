@@ -1,0 +1,131 @@
+const chatMessages = document.getElementById('chatMessages');
+const userInput = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+
+function addMessage(text, isUser) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = isUser ? 'user-message' : 'bot-message';
+    
+    if (!isUser) {
+        // Format bot messages
+        contentDiv.innerHTML = formatBotMessage(text);
+    } else {
+        contentDiv.textContent = text;
+    }
+    
+    messageDiv.appendChild(contentDiv);
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function formatBotMessage(text) {
+    // Convert markdown-style formatting to HTML
+    let formatted = text
+        // Bold text: **text** to <strong>text</strong>
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // Links: [text](url) to <a href="url">text</a>
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline;">$1</a>')
+        // Bullet points: number followed by period
+        .replace(/(\d+)\.\s/g, '<br>$1. ')
+        // Line breaks for better readability
+        .replace(/\n/g, '<br>');
+    
+    return formatted;
+}
+
+function addLoadingMessage() {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message';
+    messageDiv.id = 'loadingMessage';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'bot-message';
+    contentDiv.innerHTML = '<span class="loading"></span> <span class="loading"></span> <span class="loading"></span>';
+    messageDiv.appendChild(contentDiv);
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function removeLoadingMessage() {
+    const loading = document.getElementById('loadingMessage');
+    if (loading) loading.remove();
+}
+
+async function sendMessage() {
+    const message = userInput.value.trim();
+    if (!message) return;
+
+    addMessage(message, true);
+    userInput.value = '';
+    
+    // Create a placeholder for streaming response
+    const botMessageDiv = document.createElement('div');
+    botMessageDiv.className = 'message';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'bot-message';
+    contentDiv.id = 'streaming-message';
+    botMessageDiv.appendChild(contentDiv);
+    chatMessages.appendChild(botMessageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    try {
+        // FIXED: Use relative URL instead of localhost
+        const response = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message })
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        const DELAY_MS = 20; // Adjust this value: higher = slower (try 20-50ms)
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.error) {
+                            contentDiv.innerHTML = formatBotMessage('Sorry, I encountered an error. Please try again.');
+                            break;
+                        }
+                        
+                        if (data.content) {
+                            fullText += data.content;
+                            contentDiv.innerHTML = formatBotMessage(fullText);
+                            chatMessages.scrollTop = chatMessages.scrollHeight;
+                            
+                            // Add delay for slower streaming effect
+                            await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+                        }
+                        
+                        if (data.done) {
+                            contentDiv.id = ''; // Remove streaming id
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        const streamingMsg = document.getElementById('streaming-message');
+        if (streamingMsg) {
+            streamingMsg.innerHTML = formatBotMessage('Connection error. Please check if the server is running.');
+        }
+    }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+userInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') sendMessage();
+});
