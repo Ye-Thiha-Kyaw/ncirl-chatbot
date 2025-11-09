@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NCIRL Student Support Chatbot</title>
+
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+  </head>
+  <body>
+    <div class="chat-container">
+      <div class="chat-header" style="position: relative">
+        <div class="header-content">
+          <img
+            src="{{ url_for('static', filename='images/NCI-logo.png') }}"
+            alt="NCIRL Logo"
+            class="ncirl-logo"
+          />
+          <div class="header-text">
+            <h1>NCIRL Student Support</h1>
+            <p>Powered by Groq LLaMA-3</p>
+          </div>
+        </div>
+      
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="message">
+          <div class="bot-message">
+            Hi! I'm your NCIRL student support assistant. How can I help you
+            today?
+          </div>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="input-wrapper">
+          <input
+            type="text"
+            id="userInput"
+            placeholder="Ask me anything about NCIRL..."
+          />
+          <button id="sendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/index.js') }}"></script>
+  </body>
+</html>
