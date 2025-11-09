@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, redirect, url_for, session
 from flask_cors import CORS
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import os
 from groq import Groq
@@ -30,15 +31,19 @@ CORS(app, resources={
     }
 })
 
+# ===== DATABASE CONFIGURATION =====
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def get_db_connection():
+    """Create a database connection"""
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
+
 # ===== ADMIN AUTHENTICATION =====
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # Change in .env file!
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 # ===== STREAMING SPEED CONTROL =====
-STREAM_DELAY = 0.03  # ← ADJUST THIS: 0.01 = fast, 0.05 = slow, 0 = instant
-# 0.01 = 10ms (very fast)
-# 0.02 = 20ms (balanced - recommended)
-# 0.03 = 30ms (slower, more readable)
-# 0.05 = 50ms (dramatic typing effect)
+STREAM_DELAY = 0.03
 
 # ===== API KEY ROTATION SYSTEM =====
 class GroqAPIManager:
@@ -110,49 +115,64 @@ groq_manager = GroqAPIManager()
 
 # ===== DATABASE SETUP =====
 def init_db():
-    conn = sqlite3.connect('chatbot.db')
+    """Initialize PostgreSQL database with tables and sample data"""
+    conn = get_db_connection()
     c = conn.cursor()
     
+    # Create conversations table
     c.execute('''CREATE TABLE IF NOT EXISTS conversations
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 (id SERIAL PRIMARY KEY,
                   user_message TEXT,
                   bot_response TEXT,
-                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+                  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
+    # Create knowledge_base table
     c.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 (id SERIAL PRIMARY KEY,
                   category TEXT,
                   question TEXT,
                   answer TEXT,
                   source TEXT,
-                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     
-    sample_data = [
-        ('admissions', 'How do I apply to NCIRL?', 
-         'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
-         'NCIRL Student Hub'),
-        ('library', 'What are the library opening hours?', 
-         'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
-         'NCIRL Student Hub'),
-        ('support', 'Where can I get academic support?', 
-         'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
-         'NCIRL Student Hub'),
-        ('facilities', 'What facilities are available on campus?', 
-         'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
-         'NCIRL Student Hub'),
-    ]
+    # Check if sample data already exists
+    c.execute('SELECT COUNT(*) FROM knowledge_base')
+    count = c.fetchone()[0]
     
-    c.executemany('INSERT OR IGNORE INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)', 
-                  sample_data)
+    # Only insert sample data if table is empty
+    if count == 0:
+        sample_data = [
+            ('admissions', 'How do I apply to NCIRL?', 
+             'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
+             'NCIRL Student Hub'),
+            ('library', 'What are the library opening hours?', 
+             'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
+             'NCIRL Student Hub'),
+            ('support', 'Where can I get academic support?', 
+             'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
+             'NCIRL Student Hub'),
+            ('facilities', 'What facilities are available on campus?', 
+             'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
+             'NCIRL Student Hub'),
+        ]
+        
+        c.executemany('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)', 
+                      sample_data)
     
     conn.commit()
     conn.close()
+    print("Database initialized successfully!")
 
-init_db()
+# Initialize database on startup
+try:
+    init_db()
+except Exception as e:
+    print(f"Database initialization error: {e}")
 
 # ===== HELPER FUNCTIONS =====
 def get_knowledge_context():
-    conn = sqlite3.connect('chatbot.db')
+    """Get all knowledge from database for AI context"""
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('SELECT category, question, answer FROM knowledge_base')
     knowledge = c.fetchall()
@@ -165,19 +185,17 @@ def get_knowledge_context():
     return context
 
 def save_conversation(user_msg, bot_resp):
-    conn = sqlite3.connect('chatbot.db')
+    """Save conversation to database"""
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute('INSERT INTO conversations (user_message, bot_response) VALUES (?, ?)',
+    c.execute('INSERT INTO conversations (user_message, bot_response) VALUES (%s, %s)',
               (user_msg, bot_resp))
     conn.commit()
     conn.close()
 
 # ===== AUTHENTICATION DECORATOR =====
 def admin_required(f):
-    """
-    Decorator to protect admin routes
-    Redirects to login page if not authenticated
-    """
+    """Decorator to protect admin routes"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('admin_logged_in'):
@@ -188,10 +206,7 @@ def admin_required(f):
 # ===== AUTHENTICATION ROUTES =====
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    """
-    Admin login page and authentication
-    """
-    # If already logged in, redirect to admin panel
+    """Admin login page and authentication"""
     if session.get('admin_logged_in'):
         return redirect(url_for('admin'))
     
@@ -200,7 +215,7 @@ def admin_login():
         
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
-            session.permanent = True  # Makes session persistent
+            session.permanent = True
             return jsonify({'success': True}), 200
         else:
             return jsonify({'success': False, 'error': 'Invalid password'}), 401
@@ -209,9 +224,7 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    """
-    Logout and clear session
-    """
+    """Logout and clear session"""
     session.pop('admin_logged_in', None)
     return redirect(url_for('admin_login'))
 
@@ -222,7 +235,7 @@ def index():
 
 # ===== PROTECTED ADMIN ROUTE =====
 @app.route('/admin')
-@admin_required  # This protects the admin panel
+@admin_required
 def admin():
     return render_template('admin.html')
 
@@ -256,7 +269,6 @@ def chat():
                 
                 messages.append({"role": "user", "content": user_message})
                 
-                # Use API manager with automatic rotation
                 stream = groq_manager.make_request(
                     messages=messages,
                     model="llama-3.3-70b-versatile",
@@ -273,7 +285,6 @@ def chat():
                         yield f"data: {json.dumps({'content': content})}\n\n"
                         time.sleep(STREAM_DELAY)
                 
-                # Save conversation
                 save_conversation(user_message, full_response)
                 
                 yield f"data: {json.dumps({'done': True})}\n\n"
@@ -316,7 +327,7 @@ def manual_rotate():
 
 # ===== KNOWLEDGE BASE ROUTES (PROTECTED) =====
 @app.route('/add_knowledge', methods=['POST'])
-@admin_required  # Protect this route too
+@admin_required
 def add_knowledge():
     try:
         data = request.json
@@ -325,9 +336,9 @@ def add_knowledge():
         answer = data.get('answer', '')
         source = data.get('source', 'User Input')
         
-        conn = sqlite3.connect('chatbot.db')
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
+        c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
                   (category, question, answer, source))
         conn.commit()
         conn.close()
@@ -338,7 +349,7 @@ def add_knowledge():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload_csv', methods=['POST'])
-@admin_required  # Protect this route too
+@admin_required
 def upload_csv():
     """Upload CSV file with bulk knowledge entries"""
     try:
@@ -353,41 +364,36 @@ def upload_csv():
         if not file.filename.endswith('.csv'):
             return jsonify({'error': 'File must be a CSV'}), 400
         
-        # Read CSV file
         stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
         
-        # Expected columns: category, question, answer, source
         required_columns = ['category', 'question', 'answer']
         
-        # Check if required columns exist
         if not all(col in csv_reader.fieldnames for col in required_columns):
             return jsonify({
                 'error': f'CSV must contain columns: {", ".join(required_columns)}. Optional: source'
             }), 400
         
-        conn = sqlite3.connect('chatbot.db')
+        conn = get_db_connection()
         c = conn.cursor()
         
         added_count = 0
         skipped_count = 0
         errors = []
         
-        for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (row 1 is header)
+        for row_num, row in enumerate(csv_reader, start=2):
             try:
                 category = row.get('category', '').strip()
                 question = row.get('question', '').strip()
                 answer = row.get('answer', '').strip()
                 source = row.get('source', 'CSV Import').strip()
                 
-                # Validate required fields
                 if not category or not question or not answer:
                     skipped_count += 1
                     errors.append(f"Row {row_num}: Missing required fields")
                     continue
                 
-                # Insert into database
-                c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
+                c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
                          (category, question, answer, source))
                 added_count += 1
                 
@@ -424,24 +430,24 @@ courses,What programs does NCIRL offer?,NCIRL offers programs in Business Comput
     )
 
 @app.route('/get_knowledge', methods=['GET'])
-@admin_required  # Protect this route too
+@admin_required
 def get_knowledge():
     try:
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('SELECT id, category, question, answer, source, created_at FROM knowledge_base')
+        conn = get_db_connection()
+        c = conn.cursor(cursor_factory=RealDictCursor)
+        c.execute('SELECT id, category, question, answer, source, created_at FROM knowledge_base ORDER BY created_at DESC')
         rows = c.fetchall()
         conn.close()
         
         knowledge = []
         for row in rows:
             knowledge.append({
-                'id': row[0],
-                'category': row[1],
-                'question': row[2],
-                'answer': row[3],
-                'source': row[4],
-                'created_at': row[5]
+                'id': row['id'],
+                'category': row['category'],
+                'question': row['question'],
+                'answer': row['answer'],
+                'source': row['source'],
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None
             })
         
         return jsonify(knowledge), 200
@@ -450,18 +456,18 @@ def get_knowledge():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/update_knowledge/<int:id>', methods=['PUT', 'OPTIONS'])
-@admin_required  # Protect this route too
+@admin_required
 def update_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
         data = request.json
-        conn = sqlite3.connect('chatbot.db')
+        conn = get_db_connection()
         c = conn.cursor()
         c.execute('''UPDATE knowledge_base 
-                     SET category=?, question=?, answer=?, source=? 
-                     WHERE id=?''',
+                     SET category=%s, question=%s, answer=%s, source=%s 
+                     WHERE id=%s''',
                   (data['category'], data['question'], data['answer'], data['source'], id))
         conn.commit()
         conn.close()
@@ -470,15 +476,15 @@ def update_knowledge(id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/delete_knowledge/<int:id>', methods=['DELETE', 'OPTIONS'])
-@admin_required  # Protect this route too
+@admin_required
 def delete_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
-        conn = sqlite3.connect('chatbot.db')
+        conn = get_db_connection()
         c = conn.cursor()
-        c.execute('DELETE FROM knowledge_base WHERE id=?', (id,))
+        c.execute('DELETE FROM knowledge_base WHERE id=%s', (id,))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Knowledge deleted successfully'}), 200
@@ -487,11 +493,11 @@ def delete_knowledge(id):
 
 # ===== HISTORY ROUTE =====
 @app.route('/history', methods=['GET'])
-@admin_required  # Protect this route too
+@admin_required
 def get_history():
     try:
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
+        conn = get_db_connection()
+        c = conn.cursor(cursor_factory=RealDictCursor)
         c.execute('SELECT user_message, bot_response, timestamp FROM conversations ORDER BY timestamp DESC LIMIT 50')
         rows = c.fetchall()
         conn.close()
@@ -499,9 +505,9 @@ def get_history():
         history = []
         for row in rows:
             history.append({
-                'user_message': row[0],
-                'bot_response': row[1],
-                'timestamp': row[2]
+                'user_message': row['user_message'],
+                'bot_response': row['bot_response'],
+                'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None
             })
         
         return jsonify(history), 200
@@ -510,10 +516,6 @@ def get_history():
         return jsonify({'error': str(e)}), 500
 
 # ===== RUN APPLICATION =====
-# if __name__ == '__main__':
-#     app.run(debug=True, port=5000)
-
-
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
