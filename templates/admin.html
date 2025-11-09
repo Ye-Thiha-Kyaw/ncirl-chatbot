@@ -12,7 +12,6 @@
             <div class="admin-header">
                 <a href="/" class="back-link">← Back to Chat</a>
                 <h1>📚 Knowledge Management Panel</h1>
-                <!-- NEW: Logout Button -->
                 <a href="/admin/logout" class="logout-link">🚪 Logout</a>
             </div>
             <div class="admin-content">
@@ -24,6 +23,10 @@
                     <div class="stat-card">
                         <h3 id="totalCategories">0</h3>
                         <p>Categories</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="filteredCount">0</h3>
+                        <p>Filtered Results</p>
                     </div>
                 </div>
 
@@ -51,6 +54,13 @@
                                 <option value="accommodation">Accommodation</option>
                                 <option value="events">Events</option>
                                 <option value="sports">Sports & Clubs</option>
+                                <option value="it">IT Services</option>
+                                <option value="exams">Exams</option>
+                                <option value="international">International</option>
+                                <option value="contact">Contact</option>
+                                <option value="general">General</option>
+                                <option value="health">Health</option>
+                                <option value="safety">Safety</option>
                                 <option value="other">Other</option>
                             </select>
                         </div>
@@ -93,7 +103,7 @@
                             Your CSV file must have these columns (in this exact order):<br>
                             <code>category, question, answer, source</code>
                             <br><br>
-                            <strong>Supported Categories:</strong> admissions, library, support, facilities, courses, fees, accommodation, events, sports, other
+                            <strong>Supported Categories:</strong> admissions, library, support, facilities, courses, fees, accommodation, events, sports, it, exams, international, contact, general, health, safety, other
                             <br><br>
                             <a href="/download_sample_csv" class="btn-download-template" download>
                                 ⬇️ Download Sample Template
@@ -107,6 +117,42 @@
                 </div>
 
                 <div id="viewTab" class="tab-content">
+                    <!-- SEARCH & FILTER SECTION -->
+                    <div class="search-filter-section">
+                        <div class="search-bar-container">
+                            <input type="text" id="searchInput" class="search-input" placeholder="🔍 Search questions, answers, or keywords...">
+                            <button onclick="clearSearch()" class="btn-clear">✕ Clear</button>
+                        </div>
+                        
+                        <div class="filter-container">
+                            <label>Filter by Category:</label>
+                            <select id="categoryFilter" onchange="filterKnowledge()">
+                                <option value="all">All Categories</option>
+                                <option value="admissions">Admissions</option>
+                                <option value="library">Library</option>
+                                <option value="support">Support</option>
+                                <option value="facilities">Facilities</option>
+                                <option value="courses">Courses</option>
+                                <option value="fees">Fees & Payments</option>
+                                <option value="accommodation">Accommodation</option>
+                                <option value="events">Events</option>
+                                <option value="sports">Sports & Clubs</option>
+                                <option value="it">IT Services</option>
+                                <option value="exams">Exams</option>
+                                <option value="international">International</option>
+                                <option value="contact">Contact</option>
+                                <option value="general">General</option>
+                                <option value="health">Health</option>
+                                <option value="safety">Safety</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="search-info">
+                            <span id="searchResults">Showing all entries</span>
+                        </div>
+                    </div>
+                    
                     <div id="knowledgeList" class="knowledge-list">
                         <div class="loading-spinner">Loading knowledge base...</div>
                     </div>
@@ -136,6 +182,13 @@
                         <option value="accommodation">Accommodation</option>
                         <option value="events">Events</option>
                         <option value="sports">Sports & Clubs</option>
+                        <option value="it">IT Services</option>
+                        <option value="exams">Exams</option>
+                        <option value="international">International</option>
+                        <option value="contact">Contact</option>
+                        <option value="general">General</option>
+                        <option value="health">Health</option>
+                        <option value="safety">Safety</option>
                         <option value="other">Other</option>
                     </select>
                 </div>
