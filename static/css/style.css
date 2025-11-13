@@ -15,7 +15,7 @@ body {
     align-items: center;
     padding: 15px;
     overflow: hidden;
-    /* Prevent body scroll */
+    
 }
 
 .chat-container {
@@ -322,6 +322,8 @@ footer {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin-top: 12px;
     flex-shrink: 0;
+    bottom: 0;
+    position: fixed;
 }
 
 footer p {
@@ -527,7 +529,6 @@ footer .author {
         font-size: 11px;
         margin-top: 5px;
         text-align: center;
-        bottom: auto;
     }
 }
 
