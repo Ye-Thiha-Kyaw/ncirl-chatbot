@@ -21,6 +21,27 @@ function addMessage(message, isUser) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+// Typing effect for initial message
+window.addEventListener('load', function() {
+    const firstMessage = document.querySelector('.bot-message');
+    if (firstMessage) {
+        const text = firstMessage.textContent;
+        firstMessage.textContent = '';
+        let i = 0;
+        
+        function type() {
+            if (i < text.length) {
+                firstMessage.textContent += text.charAt(i);
+                i++;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                setTimeout(type, 20);
+            }
+        }
+        
+        setTimeout(type, 400);
+    }
+});
+
 function formatBotMessage(text) {
     // Convert markdown-style formatting to HTML
     let formatted = text
@@ -144,3 +165,4 @@ sendBtn.addEventListener('click', sendMessage);
 userInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendMessage();
 });
+

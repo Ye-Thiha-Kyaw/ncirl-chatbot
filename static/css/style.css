@@ -6,7 +6,8 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #228B22 0% ,#50C878 100%);
+
     min-height: 100vh;
     max-height: 100vh;
     display: flex;
@@ -33,7 +34,7 @@ body {
 }
 
 .chat-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #2C5F7C 0%, #006994 100%);
     color: white;
     padding: 20px;
     text-align: center;
@@ -157,15 +158,17 @@ body {
     flex-shrink: 0;
     color: white;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    
 }
 
 .bot-avatar {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #667eea 80%, #000000 100% );
 }
 
 .user-avatar {
-    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    background: linear-gradient(135deg, #667eea 80%, #000000 100%);
 }
+
 
 @keyframes slideIn {
     from {
@@ -249,7 +252,7 @@ body {
 
 #sendBtn {
     padding: 12px 30px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(90deg,  #FF883E 100%);
     color: white;
     border: none;
     border-radius: 25px;
@@ -401,7 +404,7 @@ footer .author {
 
     #userInput {
         font-size: 16px;
-        /* Prevents iOS zoom */
+        
         padding: 10px 14px;
     }
 
