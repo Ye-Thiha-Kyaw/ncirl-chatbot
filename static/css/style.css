@@ -12,8 +12,7 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    padding: 10px;
-    padding-bottom: 20px;
+    padding: 20px 10px 140px 10px; /* Added bottom padding for footer */
 }
 
 .chat-container {
@@ -25,7 +24,8 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height:750px;
+    height: 750px;
+    margin-bottom: 20px; /* Space above footer */
 }
 
 .chat-header {
@@ -289,38 +289,42 @@ body {
 }
 
 footer {
-    position: fixed;   
-    bottom: 20px;      
-    left: 50%;        
+    position: relative; /* Changed from fixed */
     color: rgb(0, 0, 0);
-    font-size: 14px;
+    font-size: 13px;
     opacity: 0.8;
-    transform: translateX(-50%);
     text-align: center;
-    max-width: 90%;
-    padding: 0 20px;
-    z-index: 100;
+    max-width: 900px;
+    width: 100%;
+    padding: 15px 20px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 15px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    margin-top: 20px;
 }
 
 footer p {
     margin: 5px 0;
-    line-height: 1.4;
+    line-height: 1.5;
 }
 
 footer .author {
     font-weight: bold;
-    font-size: 16px;
+    font-size: 15px;
+    margin-bottom: 8px;
 }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
     body {
-        padding: 5px;
+        padding: 10px 5px 20px 5px;
     }
 
     .chat-container {
-        height: 95vh;
-        max-height: 700px;
+        height: 70vh;
+        min-height: 500px;
+        max-height: 650px;
+        margin-bottom: 15px;
     }
 
     .header-content {
@@ -373,19 +377,20 @@ footer .author {
     }
 
     footer {
-        font-size: 12px;
-        bottom: 10px;
+        font-size: 11px;
+        padding: 10px 15px;
+        margin-top: 15px;
     }
 
     footer .author {
-        font-size: 14px;
+        font-size: 13px;
     }
 }
 
 /* Tablet responsive */
 @media (min-width: 769px) and (max-width: 1024px) {
     .chat-container {
-        max-width: 900px;
+        max-width: 850px;
         height: 700px;
     }
 
@@ -403,9 +408,13 @@ footer .author {
 
 /* Large screens */
 @media (min-width: 1400px) {
+    body {
+        padding: 30px 20px 160px 20px;
+    }
+
     .chat-container {
-        max-width: 1200px;
-        height: 850px;
+        max-width: 1000px;
+        height: 800px;
     }
 
     .message-avatar {
@@ -417,5 +426,10 @@ footer .author {
     .user-message,
     .bot-message {
         font-size: 17px;
+    }
+
+    footer {
+        font-size: 14px;
+        max-width: 1000px;
     }
 }
