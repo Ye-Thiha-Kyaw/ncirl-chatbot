@@ -25,7 +25,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 800px;
+    height:750px;
 }
 
 .chat-header {
