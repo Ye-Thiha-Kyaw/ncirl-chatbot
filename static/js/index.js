@@ -2,20 +2,21 @@ const chatMessages = document.getElementById('chatMessages');
 const userInput = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
 
-function addMessage(text, isUser) {
+function addMessage(message, isUser) {
     const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
-    const contentDiv = document.createElement('div');
-    contentDiv.className = isUser ? 'user-message' : 'bot-message';
+    messageDiv.className = isUser ? 'message user' : 'message';
     
-    if (!isUser) {
-        // Format bot messages
-        contentDiv.innerHTML = formatBotMessage(text);
-    } else {
-        contentDiv.textContent = text;
-    }
+    const avatar = document.createElement('div');
+    avatar.className = isUser ? 'message-avatar user-avatar' : 'message-avatar bot-avatar';
+    avatar.textContent = isUser ? '👩‍🎓' : '🤖';
     
-    messageDiv.appendChild(contentDiv);
+    const textDiv = document.createElement('div');
+    textDiv.className = isUser ? 'user-message' : 'bot-message';
+    textDiv.textContent = message;
+    
+    messageDiv.appendChild(avatar);
+    messageDiv.appendChild(textDiv);
+    
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -39,9 +40,17 @@ function addLoadingMessage() {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message';
     messageDiv.id = 'loadingMessage';
+    
+    // Add avatar for loading message
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar bot-avatar';
+    avatar.textContent = '👩‍🏫';
+    
     const contentDiv = document.createElement('div');
     contentDiv.className = 'bot-message';
     contentDiv.innerHTML = '<span class="loading"></span> <span class="loading"></span> <span class="loading"></span>';
+    
+    messageDiv.appendChild(avatar);
     messageDiv.appendChild(contentDiv);
     chatMessages.appendChild(messageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -59,18 +68,25 @@ async function sendMessage() {
     addMessage(message, true);
     userInput.value = '';
     
-    // Create a placeholder for streaming response
+    // Create a placeholder for streaming response WITH AVATAR
     const botMessageDiv = document.createElement('div');
     botMessageDiv.className = 'message';
+    
+    // Add bot avatar
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar bot-avatar';
+    avatar.textContent = '👩‍🏫';
+    
     const contentDiv = document.createElement('div');
     contentDiv.className = 'bot-message';
     contentDiv.id = 'streaming-message';
+    
+    botMessageDiv.appendChild(avatar);
     botMessageDiv.appendChild(contentDiv);
     chatMessages.appendChild(botMessageDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
     try {
-        // FIXED: Use relative URL instead of localhost
         const response = await fetch('/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -80,7 +96,7 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let fullText = '';
-        const DELAY_MS = 20; // Adjust this value: higher = slower (try 20-50ms)
+        const DELAY_MS = 20;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -104,7 +120,6 @@ async function sendMessage() {
                             contentDiv.innerHTML = formatBotMessage(fullText);
                             chatMessages.scrollTop = chatMessages.scrollHeight;
                             
-                            // Add delay for slower streaming effect
                             await new Promise(resolve => setTimeout(resolve, DELAY_MS));
                         }
                         
