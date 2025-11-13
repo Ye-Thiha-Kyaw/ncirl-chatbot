@@ -13,10 +13,11 @@ body {
     justify-content: center;
     align-items: center;
     padding: 10px;
+    padding-bottom: 20px;
 }
 
 .chat-container {
-    max-width: 800px;
+    max-width: 900px;
     width: 100%;
     background: white;
     border-radius: 20px;
@@ -24,7 +25,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    height: 600px;
+    height: 800px;
 }
 
 .chat-header {
