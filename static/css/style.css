@@ -527,6 +527,7 @@ footer .author {
         font-size: 11px;
         margin-top: 5px;
         text-align: center;
+        bottom: auto;
     }
 }
 
