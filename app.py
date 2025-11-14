@@ -13,8 +13,14 @@ from functools import wraps
 import secrets
 
 # ===== POSTGRESQL SUPPORT =====
-import psycopg2
-from psycopg2.extras import RealDictCursor
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+    print("⚠️  psycopg2 not available - PostgreSQL disabled (SQLite will be used)")
+
 from urllib.parse import urlparse
 
 load_dotenv()
@@ -44,10 +50,12 @@ STREAM_DELAY = 0.03  # ← ADJUST THIS: 0.01 = fast, 0.05 = slow, 0 = instant
 # ===== DATABASE CONFIGURATION =====
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-if DATABASE_URL:
+if DATABASE_URL and PSYCOPG2_AVAILABLE:
     print("🐘 Using PostgreSQL database")
     USE_POSTGRES = True
 else:
+    if DATABASE_URL and not PSYCOPG2_AVAILABLE:
+        print("⚠️  DATABASE_URL found but psycopg2 not installed - falling back to SQLite")
     print("📁 Using SQLite database (local development)")
     USE_POSTGRES = False
 
@@ -311,7 +319,7 @@ def chat():
         system_prompt = f"""{knowledge_context}
 
 When answering:
-1. Be friendly and conversational (use Irish expressions naturally)
+1. Be friendly and conversational in clear, professional English
 2. If you find relevant info in the knowledge base, use it
 3. If the question isn't in the knowledge base, provide helpful general information
 4. Keep responses concise but complete
