@@ -12,6 +12,11 @@ import time
 from functools import wraps
 import secrets
 
+# ===== POSTGRESQL SUPPORT =====
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from urllib.parse import urlparse
+
 load_dotenv()
 
 app = Flask(__name__, 
@@ -35,10 +40,27 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # Change in .env 
 
 # ===== STREAMING SPEED CONTROL =====
 STREAM_DELAY = 0.03  # ← ADJUST THIS: 0.01 = fast, 0.05 = slow, 0 = instant
-# 0.01 = 10ms (very fast)
-# 0.02 = 20ms (balanced - recommended)
-# 0.03 = 30ms (slower, more readable)
-# 0.05 = 50ms (dramatic typing effect)
+
+# ===== DATABASE CONFIGURATION =====
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    print("🐘 Using PostgreSQL database")
+    USE_POSTGRES = True
+else:
+    print("📁 Using SQLite database (local development)")
+    USE_POSTGRES = False
+
+# ===== DATABASE CONNECTION HELPER =====
+def get_db_connection():
+    """Get database connection based on environment"""
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        return conn
+    else:
+        conn = sqlite3.connect('chatbot.db')
+        conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+        return conn
 
 # ===== API KEY ROTATION SYSTEM =====
 class GroqAPIManager:
@@ -110,65 +132,112 @@ groq_manager = GroqAPIManager()
 
 # ===== DATABASE SETUP =====
 def init_db():
-    conn = sqlite3.connect('chatbot.db')
-    c = conn.cursor()
+    """Initialize database tables (works for both SQLite and PostgreSQL)"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    c.execute('''CREATE TABLE IF NOT EXISTS conversations
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  user_message TEXT,
-                  bot_response TEXT,
-                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    if USE_POSTGRES:
+        # PostgreSQL syntax
+        cursor.execute('''CREATE TABLE IF NOT EXISTS conversations
+                     (id SERIAL PRIMARY KEY,
+                      user_message TEXT,
+                      bot_response TEXT,
+                      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
+                     (id SERIAL PRIMARY KEY,
+                      category TEXT,
+                      question TEXT,
+                      answer TEXT,
+                      source TEXT,
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+    else:
+        # SQLite syntax
+        cursor.execute('''CREATE TABLE IF NOT EXISTS conversations
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_message TEXT,
+                      bot_response TEXT,
+                      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
+        cursor.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      category TEXT,
+                      question TEXT,
+                      answer TEXT,
+                      source TEXT,
+                      created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
     
-    c.execute('''CREATE TABLE IF NOT EXISTS knowledge_base
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  category TEXT,
-                  question TEXT,
-                  answer TEXT,
-                  source TEXT,
-                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    # Check if sample data already exists
+    cursor.execute('SELECT COUNT(*) FROM knowledge_base')
+    count_result = cursor.fetchone()
     
-    sample_data = [
-        ('admissions', 'How do I apply to NCIRL?', 
-         'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
-         'NCIRL Student Hub'),
-        ('library', 'What are the library opening hours?', 
-         'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
-         'NCIRL Student Hub'),
-        ('support', 'Where can I get academic support?', 
-         'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
-         'NCIRL Student Hub'),
-        ('facilities', 'What facilities are available on campus?', 
-         'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
-         'NCIRL Student Hub'),
-    ]
+    # Handle both dict-like and tuple results
+    if isinstance(count_result, dict):
+        count = count_result['count']
+    else:
+        count = count_result[0] if count_result else 0
     
-    c.executemany('INSERT OR IGNORE INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)', 
-                  sample_data)
+    # Only insert sample data if table is empty
+    if count == 0:
+        sample_data = [
+            ('admissions', 'How do I apply to NCIRL?', 
+             'You can apply through the CAO system for undergraduate courses or directly through the NCIRL website for postgraduate programs. Visit www.ncirl.ie/apply for more information.',
+             'NCIRL Student Hub'),
+            ('library', 'What are the library opening hours?', 
+             'The NCIRL library is open Monday-Friday 8:30am-9:30pm, Saturday 9am-5pm. Hours may vary during exam periods and holidays.',
+             'NCIRL Student Hub'),
+            ('support', 'Where can I get academic support?', 
+             'NCIRL offers tutoring services, writing center support, and academic advising. Visit the Student Hub or book appointments through the student portal.',
+             'NCIRL Student Hub'),
+            ('facilities', 'What facilities are available on campus?', 
+             'NCIRL campus includes computer labs, library, gym, cafeteria, student lounge, and study spaces. All facilities are accessible with your student ID card.',
+             'NCIRL Student Hub'),
+        ]
+        
+        if USE_POSTGRES:
+            # PostgreSQL placeholder syntax
+            for data in sample_data:
+                cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)', data)
+        else:
+            # SQLite placeholder syntax
+            cursor.executemany('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)', sample_data)
     
     conn.commit()
     conn.close()
 
+# Initialize database on startup
 init_db()
 
 # ===== HELPER FUNCTIONS =====
 def get_knowledge_context():
-    conn = sqlite3.connect('chatbot.db')
-    c = conn.cursor()
-    c.execute('SELECT category, question, answer FROM knowledge_base')
-    knowledge = c.fetchall()
+    """Get knowledge base context for AI"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT category, question, answer FROM knowledge_base')
+    knowledge = cursor.fetchall()
     conn.close()
     
     context = "You are a helpful NCIRL (National College of Ireland) student support assistant. Use this knowledge base to answer questions:\n\n"
-    for cat, q, a in knowledge:
+    for item in knowledge:
+        cat = item['category'] if isinstance(item, dict) else item[0]
+        q = item['question'] if isinstance(item, dict) else item[1]
+        a = item['answer'] if isinstance(item, dict) else item[2]
         context += f"Category: {cat}\nQ: {q}\nA: {a}\n\n"
     
     return context
 
 def save_conversation(user_msg, bot_resp):
-    conn = sqlite3.connect('chatbot.db')
-    c = conn.cursor()
-    c.execute('INSERT INTO conversations (user_message, bot_response) VALUES (?, ?)',
-              (user_msg, bot_resp))
+    """Save conversation to database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if USE_POSTGRES:
+        cursor.execute('INSERT INTO conversations (user_message, bot_response) VALUES (%s, %s)',
+                      (user_msg, bot_resp))
+    else:
+        cursor.execute('INSERT INTO conversations (user_message, bot_response) VALUES (?, ?)',
+                      (user_msg, bot_resp))
+    
     conn.commit()
     conn.close()
 
@@ -210,53 +279,51 @@ def admin_login():
 @app.route('/admin/logout')
 def admin_logout():
     """
-    Logout and clear session
+    Logout admin and clear session
     """
     session.pop('admin_logged_in', None)
     return redirect(url_for('admin_login'))
 
-# ===== PUBLIC ROUTES =====
+# ===== MAIN ROUTES =====
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# ===== PROTECTED ADMIN ROUTE =====
 @app.route('/admin')
-@admin_required  # This protects the admin panel
+@admin_required  # Protect admin route with authentication
 def admin():
+    """
+    Admin panel - only accessible when logged in
+    """
     return render_template('admin.html')
 
-# ===== CHAT ROUTE =====
+# ===== CHAT ROUTE WITH STREAMING =====
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
-        data = request.json
-        user_message = data.get('message', '')
-        conversation_history = data.get('history', [])
+        user_message = request.json.get('message', '')
         
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
         
-        context = get_knowledge_context()
+        knowledge_context = get_knowledge_context()
+        
+        system_prompt = f"""{knowledge_context}
+
+When answering:
+1. Be friendly and conversational (use Irish expressions naturally)
+2. If you find relevant info in the knowledge base, use it
+3. If the question isn't in the knowledge base, provide helpful general information
+4. Keep responses concise but complete
+5. Use formatting like **bold** for emphasis and numbered lists when helpful"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ]
         
         def generate():
-            full_response = ""
-            
             try:
-                messages = [
-                    {
-                        "role": "system",
-                        "content": context + "\nRespond naturally and conversationally like a helpful human assistant. Be friendly, empathetic, and informative. When listing items, use numbered lists (1. 2. 3.) with clear line breaks. Format course names and important terms in bold using **text** syntax. When mentioning web pages or resources, format them as clickable links using [Link Text](URL) markdown syntax. For example: [English Language Requirements](https://www.ncirl.ie/english-requirements). Remember the conversation context and refer back to previous questions when the user says 'yes', 'no', or gives short responses."
-                    }
-                ]
-                
-                for msg in conversation_history[-10:]:
-                    messages.append({"role": "user", "content": msg['user']})
-                    messages.append({"role": "assistant", "content": msg['bot']})
-                
-                messages.append({"role": "user", "content": user_message})
-                
-                # Use API manager with automatic rotation
                 stream = groq_manager.make_request(
                     messages=messages,
                     model="llama-3.3-70b-versatile",
@@ -264,6 +331,8 @@ def chat():
                     max_tokens=1024,
                     stream=True
                 )
+                
+                full_response = ""
                 
                 for chunk in stream:
                     if chunk.choices[0].delta.content:
@@ -273,13 +342,13 @@ def chat():
                         yield f"data: {json.dumps({'content': content})}\n\n"
                         time.sleep(STREAM_DELAY)
                 
-                # Save conversation
-                save_conversation(user_message, full_response)
-                
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 
+                # Save conversation after streaming completes
+                save_conversation(user_message, full_response)
+                
             except Exception as e:
-                print(f"Error in chat: {str(e)}")
+                print(f"Streaming error: {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
         return Response(
@@ -292,9 +361,10 @@ def chat():
         )
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"Chat error: {e}")
+        return jsonify({'error': 'An error occurred'}), 500
 
-# ===== API KEY STATUS ROUTES =====
+# ===== API STATUS ROUTES =====
 @app.route('/api-status', methods=['GET'])
 def api_status():
     """Check current API key status"""
@@ -316,7 +386,7 @@ def manual_rotate():
 
 # ===== KNOWLEDGE BASE ROUTES (PROTECTED) =====
 @app.route('/add_knowledge', methods=['POST'])
-@admin_required  # Protect this route too
+@admin_required
 def add_knowledge():
     try:
         data = request.json
@@ -325,10 +395,16 @@ def add_knowledge():
         answer = data.get('answer', '')
         source = data.get('source', 'User Input')
         
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
-                  (category, question, answer, source))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if USE_POSTGRES:
+            cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
+                          (category, question, answer, source))
+        else:
+            cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
+                          (category, question, answer, source))
+        
         conn.commit()
         conn.close()
         
@@ -338,7 +414,7 @@ def add_knowledge():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload_csv', methods=['POST'])
-@admin_required  # Protect this route too
+@admin_required
 def upload_csv():
     """Upload CSV file with bulk knowledge entries"""
     try:
@@ -366,14 +442,14 @@ def upload_csv():
                 'error': f'CSV must contain columns: {", ".join(required_columns)}. Optional: source'
             }), 400
         
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
+        conn = get_db_connection()
+        cursor = conn.cursor()
         
         added_count = 0
         skipped_count = 0
         errors = []
         
-        for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 (row 1 is header)
+        for row_num, row in enumerate(csv_reader, start=2):
             try:
                 category = row.get('category', '').strip()
                 question = row.get('question', '').strip()
@@ -387,8 +463,13 @@ def upload_csv():
                     continue
                 
                 # Insert into database
-                c.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
-                         (category, question, answer, source))
+                if USE_POSTGRES:
+                    cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
+                                 (category, question, answer, source))
+                else:
+                    cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
+                                 (category, question, answer, source))
+                
                 added_count += 1
                 
             except Exception as e:
@@ -424,25 +505,35 @@ courses,What programs does NCIRL offer?,NCIRL offers programs in Business Comput
     )
 
 @app.route('/get_knowledge', methods=['GET'])
-@admin_required  # Protect this route too
+@admin_required
 def get_knowledge():
     try:
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('SELECT id, category, question, answer, source, created_at FROM knowledge_base')
-        rows = c.fetchall()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, category, question, answer, source, created_at FROM knowledge_base')
+        rows = cursor.fetchall()
         conn.close()
         
         knowledge = []
         for row in rows:
-            knowledge.append({
-                'id': row[0],
-                'category': row[1],
-                'question': row[2],
-                'answer': row[3],
-                'source': row[4],
-                'created_at': row[5]
-            })
+            if isinstance(row, dict):
+                knowledge.append({
+                    'id': row['id'],
+                    'category': row['category'],
+                    'question': row['question'],
+                    'answer': row['answer'],
+                    'source': row['source'],
+                    'created_at': str(row['created_at'])
+                })
+            else:
+                knowledge.append({
+                    'id': row[0],
+                    'category': row[1],
+                    'question': row[2],
+                    'answer': row[3],
+                    'source': row[4],
+                    'created_at': row[5]
+                })
         
         return jsonify(knowledge), 200
         
@@ -450,19 +541,27 @@ def get_knowledge():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/update_knowledge/<int:id>', methods=['PUT', 'OPTIONS'])
-@admin_required  # Protect this route too
+@admin_required
 def update_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
         data = request.json
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('''UPDATE knowledge_base 
-                     SET category=?, question=?, answer=?, source=? 
-                     WHERE id=?''',
-                  (data['category'], data['question'], data['answer'], data['source'], id))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if USE_POSTGRES:
+            cursor.execute('''UPDATE knowledge_base 
+                             SET category=%s, question=%s, answer=%s, source=%s 
+                             WHERE id=%s''',
+                          (data['category'], data['question'], data['answer'], data['source'], id))
+        else:
+            cursor.execute('''UPDATE knowledge_base 
+                             SET category=?, question=?, answer=?, source=? 
+                             WHERE id=?''',
+                          (data['category'], data['question'], data['answer'], data['source'], id))
+        
         conn.commit()
         conn.close()
         return jsonify({'message': 'Knowledge updated successfully'}), 200
@@ -470,15 +569,20 @@ def update_knowledge(id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/delete_knowledge/<int:id>', methods=['DELETE', 'OPTIONS'])
-@admin_required  # Protect this route too
+@admin_required
 def delete_knowledge(id):
     if request.method == 'OPTIONS':
         return '', 204
     
     try:
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('DELETE FROM knowledge_base WHERE id=?', (id,))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if USE_POSTGRES:
+            cursor.execute('DELETE FROM knowledge_base WHERE id=%s', (id,))
+        else:
+            cursor.execute('DELETE FROM knowledge_base WHERE id=?', (id,))
+        
         conn.commit()
         conn.close()
         return jsonify({'message': 'Knowledge deleted successfully'}), 200
@@ -487,22 +591,29 @@ def delete_knowledge(id):
 
 # ===== HISTORY ROUTE =====
 @app.route('/history', methods=['GET'])
-@admin_required  # Protect this route too
+@admin_required
 def get_history():
     try:
-        conn = sqlite3.connect('chatbot.db')
-        c = conn.cursor()
-        c.execute('SELECT user_message, bot_response, timestamp FROM conversations ORDER BY timestamp DESC LIMIT 50')
-        rows = c.fetchall()
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_message, bot_response, timestamp FROM conversations ORDER BY timestamp DESC LIMIT 50')
+        rows = cursor.fetchall()
         conn.close()
         
         history = []
         for row in rows:
-            history.append({
-                'user_message': row[0],
-                'bot_response': row[1],
-                'timestamp': row[2]
-            })
+            if isinstance(row, dict):
+                history.append({
+                    'user_message': row['user_message'],
+                    'bot_response': row['bot_response'],
+                    'timestamp': str(row['timestamp'])
+                })
+            else:
+                history.append({
+                    'user_message': row[0],
+                    'bot_response': row[1],
+                    'timestamp': row[2]
+                })
         
         return jsonify(history), 200
         
