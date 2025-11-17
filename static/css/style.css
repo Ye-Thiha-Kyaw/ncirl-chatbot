@@ -4,19 +4,20 @@
     box-sizing: border-box;
 }
 
+/* ===== BASE STYLES (MOBILE FIRST - 320px+) ===== */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #228B22 0% ,#50C878 100%);
-
+    background: linear-gradient(135deg, #228B22 0%, #50C878 100%);
     min-height: 100vh;
     max-height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content:space-between;
+    justify-content: space-between;
     align-items: center;
     padding: 0;
+    margin: 0;
     overflow: hidden;
-    margin-top: 0;
+    gap: 5px;
 }
 
 .chat-container {
@@ -29,26 +30,26 @@ body {
     display: flex;
     flex-direction: column;
     flex: 1;
-   
     margin: 0;
+    margin-top: 5px;
     min-height: 0;
 }
 
 .chat-header {
     background: linear-gradient(135deg, #2C5F7C 0%, #006994 100%);
     color: white;
-    padding: 5px;
+    padding: 10px;
     text-align: center;
     flex-shrink: 0;
 }
 
 .chat-header h1 {
-    font-size: 22px;
+    font-size: 18px;
     margin-bottom: 3px;
 }
 
 .chat-header p {
-    font-size: 13px;
+    font-size: 12px;
     opacity: 0.9;
 }
 
@@ -56,13 +57,13 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 15px;
+    gap: 12px;
 }
 
 .ncirl-logo {
     width: auto;
     height: auto;
-    max-height: 80px;
+    max-height: 50px;
     object-fit: contain;
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
 }
@@ -76,12 +77,12 @@ body {
 
 .header-text p {
     font-weight: bold;
-    font-size: 18px;
+    font-size: 14px;
 }
 
 .flag {
-    width: 80px;
-    height: 60px;
+    width: 60px;
+    height: 45px;
     background-image: url('/static/images/Flag_of_Ireland.gif');
     background-size: contain;
     background-repeat: no-repeat;
@@ -90,20 +91,15 @@ body {
 }
 
 @keyframes wave {
-
-    0%,
-    100% {
+    0%, 100% {
         transform: skewY(0deg) scaleX(1);
     }
-
     25% {
         transform: skewY(2deg) scaleX(1.02);
     }
-
     50% {
         transform: skewY(0deg) scaleX(1);
     }
-
     75% {
         transform: skewY(-2deg) scaleX(1.02);
     }
@@ -111,14 +107,14 @@ body {
 
 .admin-link {
     position: absolute;
-    top: 20px;
-    right: 20px;
+    top: 15px;
+    right: 15px;
     background: rgba(255, 255, 255, 0.2);
     color: white;
-    padding: 8px 16px;
+    padding: 6px 12px;
     border-radius: 20px;
     text-decoration: none;
-    font-size: 14px;
+    font-size: 12px;
     transition: background 0.3s;
 }
 
@@ -128,19 +124,18 @@ body {
 
 .chat-messages {
     flex: 1;
-    padding: 20px;
+    padding: 15px;
     overflow-y: auto;
     background: #f8f9fa;
     min-height: 0;
-    /* Important for flex scrolling */
 }
 
 .message {
-    margin-bottom: 18px;
+    margin-bottom: 15px;
     animation: slideIn 0.3s ease-out;
     display: flex;
     align-items: flex-start;
-    gap: 12px;
+    gap: 10px;
 }
 
 .message.user {
@@ -148,35 +143,32 @@ body {
 }
 
 .message-avatar {
-    width: 45px;
-    height: 45px;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: bold;
-    font-size: 24px;
+    font-size: 20px;
     flex-shrink: 0;
     color: white;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    
 }
 
 .bot-avatar {
-    background: linear-gradient(135deg, #667eea 80%, #000000 100% );
+    background: linear-gradient(135deg, #667eea 80%, #000000 100%);
 }
 
 .user-avatar {
     background: linear-gradient(135deg, #667eea 80%, #000000 100%);
 }
 
-
 @keyframes slideIn {
     from {
         opacity: 0;
         transform: translateY(10px);
     }
-
     to {
         opacity: 1;
         transform: translateY(0);
@@ -185,12 +177,12 @@ body {
 
 .user-message,
 .bot-message {
-    padding: 12px 18px;
+    padding: 10px 14px;
     border-radius: 18px;
-    max-width: 70%;
+    max-width: 75%;
     word-wrap: break-word;
     line-height: 1.5;
-    font-size: 15px;
+    font-size: 14px;
 }
 
 .user-message {
@@ -225,7 +217,7 @@ body {
 }
 
 .chat-input-area {
-    padding: 18px 20px;
+    padding: 12px 15px;
     background: white;
     border-top: 1px solid #e0e0e0;
     flex-shrink: 0;
@@ -233,15 +225,15 @@ body {
 
 .input-wrapper {
     display: flex;
-    gap: 10px;
+    gap: 8px;
 }
 
 #userInput {
     flex: 1;
-    padding: 12px 18px;
+    padding: 10px 14px;
     border: 2px solid #e0e0e0;
     border-radius: 25px;
-    font-size: 15px;
+    font-size: 14px;
     outline: none;
     transition: border-color 0.3s;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -252,20 +244,20 @@ body {
 }
 
 #sendBtn {
-    padding: 12px 30px;
-    background: linear-gradient(90deg,  #FF883E 100%);
+    padding: 10px 22px;
+    background: linear-gradient(90deg, #FF883E 100%);
     color: white;
     border: none;
     border-radius: 25px;
     cursor: pointer;
     font-weight: bold;
-    font-size: 15px;
+    font-size: 14px;
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
 #sendBtn:hover {
     transform: scale(1.05);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 12px rgba(255, 136, 62, 0.4);
 }
 
 #sendBtn:active {
@@ -283,12 +275,9 @@ body {
 }
 
 @keyframes pulse {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 0.3;
     }
-
     50% {
         opacity: 1;
     }
@@ -301,259 +290,45 @@ body {
 }
 
 @keyframes blink {
-
-    0%,
-    49% {
+    0%, 49% {
         opacity: 1;
     }
-
-    50%,
-    100% {
+    50%, 100% {
         opacity: 0;
     }
 }
 
 footer {
     color: rgb(0, 0, 0);
-    font-size: 11px;
+    font-size: 9px;
     opacity: 0.85;
     text-align: center;
     max-width: 900px;
     width: 100%;
-    padding: 3px 3px;
+    padding: 3px;
     background: rgba(255, 255, 255, 0.95);
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    margin: 0;  /* No margins */
+    margin: 0;
+    margin-bottom: 5px;
     flex-shrink: 0;
     position: relative;
-    bottom: 0;
 }
 
 footer p {
-    margin: 3px 0;
+    margin: 2px 0;
     line-height: 1.4;
 }
 
 footer .author {
     font-weight: bold;
-    font-size: 13px;
+    font-size: 10px;
 }
 
-/* Mobile devices */
-@media (max-width: 768px) {
-    body {
-        padding: 0;
-        justify-content: space-between;
-    }
-
-    .chat-container {
-        flex: 1;
-        margin: 0;
-        min-height: 0;
-    }
-
-    .chat-header {
-        padding: 15px;
-    }
-
-    .chat-header h1 {
-        font-size: 18px;
-    }
-
-    .header-content {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .ncirl-logo {
-        max-height: 50px;
-    }
-
-    .flag {
-        width: 60px;
-        height: 45px;
-    }
-
-    .header-text {
-        align-items: center;
-    }
-
-    .header-text p {
-        font-size: 14px;
-    }
-
-    .message-avatar {
-        width: 38px;
-        height: 38px;
-        font-size: 20px;
-    }
-
-    .message {
-        margin-bottom: 15px;
-    }
-
-    .user-message,
-    .bot-message {
-        font-size: 14px;
-        max-width: 78%;
-        padding: 10px 14px;
-    }
-
-    .chat-input-area {
-        padding: 12px 15px;
-    }
-
-    #userInput {
-        font-size: 16px;
-        
-        padding: 10px 14px;
-    }
-
-    #sendBtn {
-        padding: 10px 20px;
-        font-size: 14px;
-    }
-
-    footer {
-        margin: 0;
-        position: relative;
-    }
-
-    footer .author {
-        font-size: 11px;
-    }
-}
-
-/* Small phones */
-@media (max-width: 480px) {
-    body {
-        padding: 0;
-    }
-
-    .chat-container {
-        flex: 1;
-        margin: 0;
-    }
-
-    .chat-header {
-        padding: 12px;
-    }
-
-    .chat-header h1 {
-        font-size: 16px;
-    }
-
-    .header-text p {
-        font-size: 12px;
-    }
-
-    .ncirl-logo {
-        max-height: 40px;
-    }
-
-    .flag {
-        width: 50px;
-        height: 38px;
-    }
-
-    footer {
-        font-size: 8px;
-        margin: 0;
-        position: relative;
-    }
-
-    footer .author {
-        font-size: 10px;
-    }
-}
-
-/* Tablets */
-@media (min-width: 769px) and (max-width: 1024px) {
-    .chat-container {
-        max-width: 800px;
-        height: calc(100vh - 150px);
-        max-height: 700px;
-    }
-
-    .message-avatar {
-        width: 42px;
-        height: 42px;
-        font-size: 22px;
-    }
-
-    .user-message,
-    .bot-message {
-        font-size: 15px;
-    }
-}
-
-/* Large screens */
-@media (min-width: 1400px) {
-    body {
-        padding: 20px;
-    }
-
-    .chat-container {
-        max-width: 1000px;
-        height: calc(100vh - 180px);
-        max-height: 800px;
-    }
-
-    .chat-header {
-        padding: 22px;
-    }
-
-    .ncirl-logo {
-        max-height: 90px;
-    }
-
-    .flag {
-        width: 90px;
-        height: 65px;
-    }
-
-    .message-avatar {
-        width: 50px;
-        height: 50px;
-        font-size: 26px;
-    }
-
-    .user-message,
-    .bot-message {
-        font-size: 16px;
-    }
-
-    footer {
-        font-size: 12px;
-        margin-top: 2px;
-    }
-
-    footer .author {
-        font-size: 14px;
-    }
-
-    footer .disclaimer {
-        font-size: 11px;
-        margin-top: 5px;
-        text-align: center;
-    }
-}
-
-/* Very tall screens */
-@media (min-height: 900px) {
-    .chat-container {
-        max-height: 800px;
-    }
-}
-
-
-/* FOLLOW-UP SUGGESTIONS STYLING */
-
-
+/* ===== FOLLOW-UP SUGGESTIONS ===== */
 .follow-up-suggestions {
-    margin: 15px 0;
-    padding: 15px;
+    margin: 12px 0;
+    padding: 12px;
     background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
     border-radius: 12px;
     border-left: 3px solid #667eea;
@@ -563,30 +338,30 @@ footer .author {
 .suggestions-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-    font-size: 14px;
+    gap: 6px;
+    margin-bottom: 10px;
+    font-size: 12px;
     color: #4a5568;
     font-weight: 500;
 }
 
 .suggestions-icon {
-    font-size: 18px;
+    font-size: 16px;
 }
 
 .suggestions-buttons {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .suggestion-button {
-    padding: 10px 15px;
+    padding: 8px 12px;
     background: white;
     border: 2px solid #e2e8f0;
     border-radius: 8px;
     color: #667eea;
-    font-size: 13px;
+    font-size: 12px;
     text-align: left;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -605,39 +380,428 @@ footer .author {
     transform: translateX(5px) scale(0.98);
 }
 
-/* Mobile responsiveness for suggestions */
-@media (max-width: 768px) {
-    .follow-up-suggestions {
+/* ========================================
+   RESPONSIVE BREAKPOINTS
+   ======================================== */
+
+/* ===== SMALL PHONES (320px - 374px) ===== */
+@media (max-width: 374px) {
+    .chat-header h1 {
+        font-size: 15px;
+    }
+    
+    .header-text p {
+        font-size: 12px;
+    }
+    
+    .ncirl-logo {
+        max-height: 40px;
+    }
+    
+    .flag {
+        width: 50px;
+        height: 38px;
+    }
+    
+    .message-avatar {
+        width: 35px;
+        height: 35px;
+        font-size: 18px;
+    }
+    
+    footer {
+        font-size: 8px;
+    }
+}
+
+/* ===== PHONES (481px - 767px) ===== */
+@media (min-width: 481px) {
+    .chat-header {
         padding: 12px;
-        margin: 12px 0;
     }
     
-    .suggestions-header {
+    .chat-header h1 {
+        font-size: 20px;
+    }
+    
+    .header-text p {
+        font-size: 15px;
+    }
+    
+    .ncirl-logo {
+        max-height: 55px;
+    }
+    
+    .flag {
+        width: 65px;
+        height: 49px;
+    }
+    
+    .message-avatar {
+        width: 40px;
+        height: 40px;
+        font-size: 21px;
+    }
+    
+    .user-message,
+    .bot-message {
+        font-size: 14px;
+        max-width: 70%;
+    }
+    
+    .chat-messages {
+        padding: 18px;
+    }
+    
+    footer {
+        font-size: 10px;
+    }
+    
+    footer .author {
+        font-size: 11px;
+    }
+}
+
+/* ===== TABLETS (768px - 1024px) ===== */
+@media (min-width: 768px) {
+    .chat-container {
+        max-width: 800px;
+    }
+    
+    .chat-header {
+        padding: 15px;
+    }
+    
+    .chat-header h1 {
+        font-size: 22px;
+    }
+    
+    .header-text p {
+        font-size: 17px;
+    }
+    
+    .ncirl-logo {
+        max-height: 70px;
+    }
+    
+    .flag {
+        width: 75px;
+        height: 56px;
+    }
+    
+    .message-avatar {
+        width: 44px;
+        height: 44px;
+        font-size: 23px;
+    }
+    
+    .user-message,
+    .bot-message {
+        font-size: 15px;
+        padding: 12px 18px;
+    }
+    
+    .chat-messages {
+        padding: 20px;
+    }
+    
+    .chat-input-area {
+        padding: 15px 18px;
+    }
+    
+    #userInput {
+        padding: 12px 18px;
+        font-size: 15px;
+    }
+    
+    #sendBtn {
+        padding: 12px 28px;
+        font-size: 15px;
+    }
+    
+    .suggestion-button {
         font-size: 13px;
+        padding: 10px 15px;
     }
     
-    .suggestions-icon {
+    footer {
+        font-size: 11px;
+    }
+}
+
+/* ===== LAPTOPS (1025px - 1439px) ===== */
+@media (min-width: 1025px) {
+    .chat-container {
+        max-width: 850px;
+    }
+    
+    .chat-header {
+        padding: 18px;
+    }
+    
+    .ncirl-logo {
+        max-height: 75px;
+    }
+    
+    .flag {
+        width: 78px;
+        height: 59px;
+    }
+    
+    .message-avatar {
+        width: 46px;
+        height: 46px;
+        font-size: 24px;
+    }
+    
+    .admin-link {
+        top: 20px;
+        right: 20px;
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+}
+
+/* ===== DESKTOPS (1440px+) ===== */
+@media (min-width: 1440px) {
+    .chat-container {
+        max-width: 900px;
+    }
+
+    .chat-header {
+        padding: 20px;
+    }
+    
+    .chat-header h1 {
+        font-size: 24px;
+    }
+    
+    .header-text p {
+        font-size: 19px;
+    }
+
+    .ncirl-logo {
+        max-height: 85px;
+    }
+
+    .flag {
+        width: 85px;
+        height: 64px;
+    }
+
+    .message-avatar {
+        width: 50px;
+        height: 50px;
+        font-size: 26px;
+    }
+
+    .user-message,
+    .bot-message {
         font-size: 16px;
     }
     
     .suggestion-button {
+        font-size: 14px;
+    }
+
+    footer {
         font-size: 12px;
-        padding: 8px 12px;
+    }
+
+    footer .author {
+        font-size: 14px;
     }
 }
 
-@media (max-width: 480px) {
-    .follow-up-suggestions {
+/* ===== LARGE DESKTOPS (1920px+) ===== */
+@media (min-width: 1920px) {
+    .chat-container {
+        max-width: 1000px;
+    }
+    
+    .chat-header {
+        padding: 22px;
+    }
+    
+    .ncirl-logo {
+        max-height: 90px;
+    }
+    
+    .flag {
+        width: 90px;
+        height: 68px;
+    }
+    
+    .message-avatar {
+        width: 52px;
+        height: 52px;
+        font-size: 27px;
+    }
+    
+    footer {
+        font-size: 13px;
+    }
+}
+
+/* ===== LANDSCAPE ORIENTATION (PHONES/TABLETS) ===== */
+@media (max-height: 500px) and (orientation: landscape) {
+    .chat-header {
+        padding: 6px;
+    }
+    
+    .chat-header h1 {
+        font-size: 15px;
+        margin-bottom: 1px;
+    }
+    
+    .header-content {
+        gap: 8px;
+    }
+    
+    .ncirl-logo {
+        max-height: 40px;
+    }
+    
+    .flag {
+        width: 50px;
+        height: 38px;
+    }
+    
+    .message-avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 17px;
+    }
+    
+    .chat-messages {
         padding: 10px;
-        margin: 10px 0;
+    }
+    
+    .message {
+        margin-bottom: 10px;
+    }
+    
+    .user-message,
+    .bot-message {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+    
+    .chat-input-area {
+        padding: 8px 12px;
+    }
+    
+    #userInput {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+    
+    #sendBtn {
+        padding: 8px 18px;
+        font-size: 13px;
+    }
+    
+    .follow-up-suggestions {
+        padding: 8px;
+        margin: 8px 0;
     }
     
     .suggestions-header {
-        font-size: 12px;
+        font-size: 11px;
+        margin-bottom: 6px;
     }
     
     .suggestion-button {
         font-size: 11px;
-        padding: 7px 10px;
+        padding: 6px 10px;
+    }
+    
+    footer {
+        font-size: 7px;
+        padding: 2px;
     }
 }
+
+/* ===== ACCESSIBILITY - REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    
+    .flag {
+        animation: none;
+    }
+    
+    #streaming-message::after {
+        animation: none;
+    }
+    
+    .message {
+        animation: none;
+    }
+    
+    .follow-up-suggestions {
+        animation: none;
+    }
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+    body {
+        background: white;
+    }
+    
+    .chat-container {
+        box-shadow: none;
+        border: 1px solid #ddd;
+        max-width: 100%;
+    }
+    
+    .chat-input-area,
+    footer,
+    .admin-link,
+    .follow-up-suggestions,
+    #sendBtn {
+        display: none !important;
+    }
+    
+    .chat-header {
+        background: #2C5F7C !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    
+    .chat-messages {
+        overflow: visible;
+    }
+    
+    .message {
+        page-break-inside: avoid;
+    }
+    
+    .flag {
+        animation: none;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
