@@ -542,3 +542,98 @@ footer .author {
         max-height: 800px;
     }
 }
+
+
+/* FOLLOW-UP SUGGESTIONS STYLING */
+
+
+.follow-up-suggestions {
+    margin: 15px 0;
+    padding: 15px;
+    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+    border-radius: 12px;
+    border-left: 3px solid #667eea;
+    animation: slideIn 0.3s ease-out;
+}
+
+.suggestions-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: #4a5568;
+    font-weight: 500;
+}
+
+.suggestions-icon {
+    font-size: 18px;
+}
+
+.suggestions-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.suggestion-button {
+    padding: 10px 15px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    color: #667eea;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.suggestion-button:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    transform: translateX(5px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.suggestion-button:active {
+    transform: translateX(5px) scale(0.98);
+}
+
+/* Mobile responsiveness for suggestions */
+@media (max-width: 768px) {
+    .follow-up-suggestions {
+        padding: 12px;
+        margin: 12px 0;
+    }
+    
+    .suggestions-header {
+        font-size: 13px;
+    }
+    
+    .suggestions-icon {
+        font-size: 16px;
+    }
+    
+    .suggestion-button {
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .follow-up-suggestions {
+        padding: 10px;
+        margin: 10px 0;
+    }
+    
+    .suggestions-header {
+        font-size: 12px;
+    }
+    
+    .suggestion-button {
+        font-size: 11px;
+        padding: 7px 10px;
+    }
+}

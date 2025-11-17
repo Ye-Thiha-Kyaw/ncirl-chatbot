@@ -11,6 +11,7 @@ import io
 import time
 from functools import wraps
 import secrets
+from hybrid_followup_system import get_hybrid_followup_questions
 
 # ===== POSTGRESQL SUPPORT =====
 try:
@@ -350,7 +351,27 @@ When answering:
                         yield f"data: {json.dumps({'content': content})}\n\n"
                         time.sleep(STREAM_DELAY)
                 
-                yield f"data: {json.dumps({'done': True})}\n\n"
+                # ✨ GENERATE FOLLOW-UP QUESTIONS
+                try:
+                    groq_client = groq_manager.get_client()
+                    follow_ups = get_hybrid_followup_questions(
+                        user_question=user_message,
+                        bot_answer=full_response,
+                        groq_client=groq_client,
+                        use_ai=True,
+                        debug=True  # Set to True to see what's happening
+                    )
+                    print(f"🎯 Generated follow-ups: {follow_ups}")  # Debug print
+                except Exception as e:
+                    print(f"❌ Follow-up generation error: {e}")
+                    follow_ups = [
+                        "What are the library hours?",
+                        "How do I contact student support?",
+                        "What courses are available?"
+                    ]
+                
+                # ✨ SEND WITH FOLLOW-UPS
+                yield f"data: {json.dumps({'done': True, 'follow_ups': follow_ups})}\n\n"
                 
                 # Save conversation after streaming completes
                 save_conversation(user_message, full_response)

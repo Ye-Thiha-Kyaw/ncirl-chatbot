@@ -1,3 +1,6 @@
+
+
+
 const chatMessages = document.getElementById('chatMessages');
 const userInput = document.getElementById('userInput');
 const sendBtn = document.getElementById('sendBtn');
@@ -21,7 +24,7 @@ function addMessage(message, isUser) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-// Typing effect for initial message
+// Typing effect for initial welcome message
 window.addEventListener('load', function() {
     const firstMessage = document.querySelector('.bot-message');
     if (firstMessage) {
@@ -43,44 +46,74 @@ window.addEventListener('load', function() {
 });
 
 function formatBotMessage(text) {
-    // Convert markdown-style formatting to HTML
     let formatted = text
-        // Bold text: **text** to <strong>text</strong>
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        // Links: [text](url) to <a href="url">text</a>
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline;">$1</a>')
-        // Bullet points: number followed by period
         .replace(/(\d+)\.\s/g, '<br>$1. ')
-        // Line breaks for better readability
         .replace(/\n/g, '<br>');
     
     return formatted;
 }
 
-function addLoadingMessage() {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message';
-    messageDiv.id = 'loadingMessage';
+// ===== FOLLOW-UP SUGGESTIONS ===== 
+
+function displayFollowUpSuggestions(followUps) {
+    // Remove any existing suggestions
+    const existingSuggestions = document.querySelectorAll('.follow-up-suggestions');
+    existingSuggestions.forEach(el => el.remove());
     
-    // Add avatar for loading message
-    const avatar = document.createElement('div');
-    avatar.className = 'message-avatar bot-avatar';
-    avatar.textContent = '👩‍🏫';
+    if (!followUps || followUps.length === 0) return;
     
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'bot-message';
-    contentDiv.innerHTML = '<span class="loading"></span> <span class="loading"></span> <span class="loading"></span>';
+    const suggestionsContainer = document.createElement('div');
+    suggestionsContainer.className = 'follow-up-suggestions';
     
-    messageDiv.appendChild(avatar);
-    messageDiv.appendChild(contentDiv);
-    chatMessages.appendChild(messageDiv);
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'suggestions-header';
+    headerDiv.innerHTML = `
+        <span class="suggestions-icon">💡</span>
+        <span>You might also want to know:</span>
+    `;
+    
+    suggestionsContainer.appendChild(headerDiv);
+    
+    const buttonsContainer = document.createElement('div');
+    buttonsContainer.className = 'suggestions-buttons';
+    
+    followUps.forEach((suggestion, index) => {
+        const button = document.createElement('button');
+        button.className = 'suggestion-button';
+        button.textContent = suggestion;
+        button.onclick = () => handleSuggestionClick(suggestion);
+        
+        button.style.opacity = '0';
+        button.style.transform = 'translateY(10px)';
+        button.style.transition = 'all 0.3s ease';
+        
+        setTimeout(() => {
+            button.style.opacity = '1';
+            button.style.transform = 'translateY(0)';
+        }, index * 100);
+        
+        buttonsContainer.appendChild(button);
+    });
+    
+    suggestionsContainer.appendChild(buttonsContainer);
+    chatMessages.appendChild(suggestionsContainer);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function removeLoadingMessage() {
-    const loading = document.getElementById('loadingMessage');
-    if (loading) loading.remove();
+function handleSuggestionClick(suggestion) {
+    userInput.value = suggestion;
+    sendMessage();
+    
+    const suggestions = document.querySelectorAll('.follow-up-suggestions');
+    suggestions.forEach(el => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+    });
 }
+
+// ===== SEND MESSAGE ===== 
 
 async function sendMessage() {
     const message = userInput.value.trim();
@@ -89,11 +122,9 @@ async function sendMessage() {
     addMessage(message, true);
     userInput.value = '';
     
-    // Create a placeholder for streaming response WITH AVATAR
     const botMessageDiv = document.createElement('div');
     botMessageDiv.className = 'message';
     
-    // Add bot avatar
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar bot-avatar';
     avatar.textContent = '👩‍🏫';
@@ -140,15 +171,20 @@ async function sendMessage() {
                             fullText += data.content;
                             contentDiv.innerHTML = formatBotMessage(fullText);
                             chatMessages.scrollTop = chatMessages.scrollHeight;
-                            
                             await new Promise(resolve => setTimeout(resolve, DELAY_MS));
                         }
                         
                         if (data.done) {
-                            contentDiv.id = ''; // Remove streaming id
+                            contentDiv.id = '';
+                            
+                            if (data.follow_ups && Array.isArray(data.follow_ups) && data.follow_ups.length > 0) {
+                                setTimeout(() => {
+                                    displayFollowUpSuggestions(data.follow_ups);
+                                }, 100);
+                            }
                         }
                     } catch (e) {
-                        // Skip invalid JSON
+                        // Silently skip invalid JSON
                     }
                 }
             }
@@ -161,8 +197,10 @@ async function sendMessage() {
     }
 }
 
+// Event listeners
 sendBtn.addEventListener('click', sendMessage);
 userInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
 });
-
