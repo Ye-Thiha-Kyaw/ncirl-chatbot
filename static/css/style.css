@@ -310,7 +310,7 @@ footer {
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin: 0;
-    margin-bottom: 5px;
+    margin-bottom: 3px;
     flex-shrink: 0;
     position: relative;
 }
@@ -785,6 +785,299 @@ footer .author {
         animation: none;
     }
 }
+
+
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    z-index: 1000;
+    backdrop-filter: blur(10px);
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.1);
+}
+
+.theme-toggle:active {
+    transform: scale(0.95);
+}
+
+.theme-icon {
+    position: absolute;
+    font-size: 24px;
+    transition: all 0.3s ease;
+}
+
+/* Show sun in light mode, hide moon */
+body:not(.dark-mode) .theme-icon.sun {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+body:not(.dark-mode) .theme-icon.moon {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+/* Show moon in dark mode, hide sun */
+body.dark-mode .theme-icon.sun {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+body.dark-mode .theme-icon.moon {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+/* Move admin link if present */
+.admin-link {
+    right: 75px; /* Move left to make room for theme toggle */
+}
+
+/* ========================================
+   DARK MODE STYLES
+   ======================================== */
+
+/* Dark Mode Variables */
+body.dark-mode {
+    --bg-gradient-start: #1a1a2e;
+    --bg-gradient-end: #16213e;
+    --container-bg: #0f3460;
+    --header-bg-start: #FFAE42;
+    --header-bg-end: #16213e;
+    --text-primary: #e4e4e4;
+    --text-secondary: #b0b0b0;
+    --message-bg: #1e3a5f;
+    --user-message-bg: #4a5f7f;
+    --input-bg: #1e3a5f;
+    --input-border: #2d4a6b;
+    --footer-bg: rgba(15, 52, 96, 0.95);
+    --suggestion-bg: #1e3a5f;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Body */
+body.dark-mode {
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+}
+
+/* Chat Container */
+body.dark-mode .chat-container {
+    background: var(--container-bg);
+    box-shadow: 0 20px 60px var(--shadow-color);
+}
+
+/* Chat Header */
+body.dark-mode .chat-header {
+    background: linear-gradient(135deg, var(--header-bg-start) 0%, var(--header-bg-end) 100%);
+}
+
+/* Chat Messages Area */
+body.dark-mode .chat-messages {
+    background: #16213e;
+}
+
+/* Bot Message */
+body.dark-mode .bot-message {
+    background: var(--message-bg);
+    color: var(--text-primary);
+    border: 1px solid #2d4a6b;
+}
+
+body.dark-mode .bot-message strong {
+    color: #6ba3ff;
+}
+
+body.dark-mode .bot-message a {
+    color: #6ba3ff;
+}
+
+body.dark-mode .bot-message a:hover {
+    color: #8bb8ff;
+}
+
+/* User Message */
+body.dark-mode .user-message {
+    background: var(--user-message-bg);
+    color: #ffffff;
+}
+
+/* Message Avatars */
+body.dark-mode .bot-avatar {
+    background: linear-gradient(135deg, #4a6fa5 0%, #2d4a6b 100%);
+}
+
+body.dark-mode .user-avatar {
+    background: linear-gradient(135deg, #5a7fa5 0%, #3d5a7b 100%);
+}
+
+/* Input Area */
+body.dark-mode .chat-input-area {
+    background: var(--container-bg);
+    border-top: 1px solid #2d4a6b;
+}
+
+body.dark-mode #userInput {
+    background: var(--input-bg);
+    border: 2px solid var(--input-border);
+    color: var(--text-primary);
+}
+
+body.dark-mode #userInput:focus {
+    border-color: #6ba3ff;
+}
+
+body.dark-mode #userInput::placeholder {
+    color: var(--text-secondary);
+}
+
+/* Send Button */
+body.dark-mode #sendBtn {
+    background: linear-gradient(90deg, #ff6b3d 0%, #ff8c5a 100%);
+}
+
+body.dark-mode #sendBtn:hover {
+    box-shadow: 0 4px 12px rgba(255, 107, 61, 0.5);
+}
+
+/* Footer */
+body.dark-mode footer {
+    background: var(--footer-bg);
+    color: var(--text-primary);
+}
+
+/* Follow-up Suggestions */
+body.dark-mode .follow-up-suggestions {
+    background: linear-gradient(135deg, rgba(75, 108, 183, 0.15) 0%, rgba(91, 76, 162, 0.15) 100%);
+    border-left: 3px solid #6ba3ff;
+}
+
+body.dark-mode .suggestions-header {
+    color: var(--text-primary);
+}
+
+body.dark-mode .suggestion-button {
+    background: var(--message-bg);
+    border: 2px solid #2d4a6b;
+    color: #6ba3ff;
+}
+
+body.dark-mode .suggestion-button:hover {
+    background: #6ba3ff;
+    color: #0f3460;
+    border-color: #6ba3ff;
+}
+
+/* Admin Link */
+body.dark-mode .admin-link {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .admin-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Smooth Transitions */
+body,
+.chat-container,
+.chat-header,
+.chat-messages,
+.chat-input-area,
+.bot-message,
+.user-message,
+#userInput,
+#sendBtn,
+footer,
+.follow-up-suggestions,
+.suggestion-button,
+.message-avatar {
+    transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ========================================
+   RESPONSIVE ADJUSTMENTS FOR THEME TOGGLE
+   ======================================== */
+
+@media (max-width: 768px) {
+    .theme-toggle {
+        width: 45px;
+        height: 45px;
+        top: 12px;
+        right: 12px;
+    }
+    
+    .theme-icon {
+        font-size: 22px;
+    }
+    
+    .admin-link {
+        right: 65px;
+    }
+}
+
+@media (max-width: 480px) {
+    .theme-toggle {
+        width: 40px;
+        height: 40px;
+        top: 10px;
+        right: 10px;
+    }
+    
+    .theme-icon {
+        font-size: 20px;
+    }
+    
+    .admin-link {
+        right: 58px;
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+    .theme-toggle {
+        width: 35px;
+        height: 35px;
+        top: 8px;
+        right: 8px;
+    }
+    
+    .theme-icon {
+        font-size: 18px;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

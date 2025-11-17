@@ -1,4 +1,34 @@
-
+document.addEventListener('DOMContentLoaded', function() {
+    // Check for saved theme preference, default to light mode
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+    }
+    
+    // Add click event to theme toggle button
+    const themeToggle = document.getElementById('themeToggle');
+    
+    if (themeToggle) {
+        themeToggle.addEventListener('click', function() {
+            // Toggle dark mode class
+            document.body.classList.toggle('dark-mode');
+            
+            // Save preference
+            const currentTheme = document.body.classList.contains('dark-mode') ? 'dark' : 'light';
+            localStorage.setItem('theme', currentTheme);
+            
+            // Optional: Log theme change (remove in production)
+            // console.log('Theme switched to:', currentTheme);
+            
+            // Add click animation
+            this.style.transform = 'scale(0.9)';
+            setTimeout(() => {
+                this.style.transform = '';
+            }, 150);
+        });
+    }
+});
 
 
 const chatMessages = document.getElementById('chatMessages');
