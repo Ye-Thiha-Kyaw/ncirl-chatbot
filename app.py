@@ -160,6 +160,20 @@ def init_db():
                       answer TEXT,
                       source TEXT,
                       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # API Usage Tracking Table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS api_usage
+                     (id SERIAL PRIMARY KEY,
+                      api_key_index INTEGER,
+                      tokens_used INTEGER,
+                      request_count INTEGER DEFAULT 1,
+                      cost DECIMAL(10, 6),
+                      timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      date DATE DEFAULT CURRENT_DATE)''')
+        
+        # Create index for faster date queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_api_usage_date 
+                      ON api_usage(date, api_key_index)''')
     else:
         # SQLite syntax
         cursor.execute('''CREATE TABLE IF NOT EXISTS conversations
@@ -175,6 +189,20 @@ def init_db():
                       answer TEXT,
                       source TEXT,
                       created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+        
+        # API Usage Tracking Table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS api_usage
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      api_key_index INTEGER,
+                      tokens_used INTEGER,
+                      request_count INTEGER DEFAULT 1,
+                      cost REAL,
+                      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                      date DATE DEFAULT CURRENT_DATE)''')
+        
+        # Create index for faster date queries
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_api_usage_date 
+                      ON api_usage(date, api_key_index)''')
     
     # Check if sample data already exists
     cursor.execute('SELECT COUNT(*) FROM knowledge_base')
@@ -250,6 +278,78 @@ def save_conversation(user_msg, bot_resp):
     conn.commit()
     conn.close()
 
+def log_api_usage(api_key_index, tokens_used, cost):
+    """Log API usage to database for real-time tracking"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if USE_POSTGRES:
+            cursor.execute('''INSERT INTO api_usage 
+                           (api_key_index, tokens_used, cost) 
+                           VALUES (%s, %s, %s)''',
+                          (api_key_index, tokens_used, cost))
+        else:
+            cursor.execute('''INSERT INTO api_usage 
+                           (api_key_index, tokens_used, cost) 
+                           VALUES (?, ?, ?)''',
+                          (api_key_index, tokens_used, cost))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error logging API usage: {e}")
+
+def get_daily_api_usage():
+    """Get today's API usage statistics"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if USE_POSTGRES:
+        cursor.execute('''
+            SELECT 
+                api_key_index,
+                SUM(tokens_used) as total_tokens,
+                SUM(request_count) as total_requests,
+                SUM(cost) as total_cost
+            FROM api_usage
+            WHERE date = CURRENT_DATE
+            GROUP BY api_key_index
+            ORDER BY api_key_index
+        ''')
+    else:
+        cursor.execute('''
+            SELECT 
+                api_key_index,
+                SUM(tokens_used) as total_tokens,
+                SUM(request_count) as total_requests,
+                SUM(cost) as total_cost
+            FROM api_usage
+            WHERE date = DATE('now')
+            GROUP BY api_key_index
+            ORDER BY api_key_index
+        ''')
+    
+    results = cursor.fetchall()
+    conn.close()
+    
+    # Format results
+    usage_data = {}
+    for row in results:
+        key_index = row['api_key_index'] if isinstance(row, dict) else row[0]
+        tokens = row['total_tokens'] if isinstance(row, dict) else row[1]
+        requests = row['total_requests'] if isinstance(row, dict) else row[2]
+        cost = row['total_cost'] if isinstance(row, dict) else row[3]
+        
+        usage_data[key_index] = {
+            'tokens': tokens or 0,
+            'requests': requests or 0,
+            'cost': float(cost) if cost else 0.0
+        }
+    
+    return usage_data
+    conn.close()
+
 # ===== AUTHENTICATION DECORATOR =====
 def admin_required(f):
     """
@@ -306,6 +406,13 @@ def admin():
     """
     return render_template('admin.html')
 
+@app.route('/performance')
+def performance_showcase():
+    """
+    performance showcase page - demonstrates advanced features and cost analysis
+    """
+    return render_template('performance_showcase.html')
+
 # ===== CHAT ROUTE WITH STREAMING =====
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -333,6 +440,9 @@ When answering:
         
         def generate():
             try:
+                # Track which key we're using
+                current_key_index = groq_manager.current_key_index
+                
                 stream = groq_manager.make_request(
                     messages=messages,
                     model="llama-3.3-70b-versatile",
@@ -342,14 +452,23 @@ When answering:
                 )
                 
                 full_response = ""
+                token_count = 0
                 
                 for chunk in stream:
                     if chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         full_response += content
+                        # Estimate tokens (rough: ~4 chars per token)
+                        token_count += len(content) // 4
                         
                         yield f"data: {json.dumps({'content': content})}\n\n"
                         time.sleep(STREAM_DELAY)
+                
+                # Calculate cost ($0.59 per 1M tokens)
+                cost = (token_count / 1_000_000) * 0.59
+                
+                # Log API usage to database
+                log_api_usage(current_key_index, token_count, cost)
                 
                 # ✨ GENERATE FOLLOW-UP QUESTIONS
                 try:
@@ -396,11 +515,39 @@ When answering:
 # ===== API STATUS ROUTES =====
 @app.route('/api-status', methods=['GET'])
 def api_status():
-    """Check current API key status"""
+    """Get real-time API usage statistics"""
+    # Get today's usage from database
+    daily_usage = get_daily_api_usage()
+    
+    # Prepare key data
+    keys_data = []
+    total_requests = 0
+    total_tokens = 0
+    total_cost = 0.0
+    
+    for i in range(len(groq_manager.api_keys)):
+        usage = daily_usage.get(i, {'tokens': 0, 'requests': 0, 'cost': 0.0})
+        
+        keys_data.append({
+            'name': f'Key {i+1}',
+            'requests': usage['requests'],
+            'limit': 14400,  # Groq free tier limit
+            'tokens': usage['tokens'],
+            'cost': usage['cost'],
+            'is_active': (i == groq_manager.current_key_index)
+        })
+        
+        total_requests += usage['requests']
+        total_tokens += usage['tokens']
+        total_cost += usage['cost']
+    
     return jsonify({
-        'current_key': groq_manager.current_key_index + 1,
-        'total_keys': len(groq_manager.api_keys),
-        'active_key_partial': groq_manager.api_keys[groq_manager.current_key_index][:10] + "..."
+        'activeKey': groq_manager.current_key_index + 1,
+        'totalCost': round(total_cost, 6),
+        'totalTokens': total_tokens,
+        'requestsToday': total_requests,
+        'keys': keys_data,
+        'timestamp': datetime.now().isoformat()
     })
 
 @app.route('/rotate-key', methods=['POST'])
