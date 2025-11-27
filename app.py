@@ -300,6 +300,78 @@ def log_api_usage(api_key_index, tokens_used, cost):
     except Exception as e:
         print(f"Error logging API usage: {e}")
 
+# ===== âœ¨ NCIRL RELEVANCE CHECKER (NEW!) =====
+def is_ncirl_related(user_question, groq_client):
+    """
+    Check if the question is related to NCIRL using AI
+    
+    Returns:
+        tuple: (is_relevant: bool, reason: str)
+    """
+    
+    prompt = f"""You are a filter for NCIRL (National College of Ireland) student support chatbot.
+
+Analyze if this question is related to NCIRL or general student/education topics:
+
+Question: "{user_question}"
+
+NCIRL-RELATED topics include:
+- NCIRL admissions, courses, fees, facilities, campus
+- Library, IT services, student support at NCIRL
+- General student questions (study tips, exam stress, time management)
+- Education-related topics (how to write essays, research methods)
+- Career advice for students
+- General academic questions
+
+NOT NCIRL-RELATED (reject these):
+- Random trivia, jokes, entertainment
+- Programming/coding tutorials (unless about NCIRL computing courses)
+- General knowledge questions (history, science facts, geography)
+- Personal advice unrelated to education
+- Weather, sports scores, news
+- Math problems, translations
+- Recipe requests, travel advice (unless about studying in Ireland)
+
+Respond with ONLY ONE WORD:
+- "YES" if related to NCIRL or general student/education topics
+- "NO" if completely unrelated
+
+Your response (one word only):"""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",  # Fast model for filtering
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a relevance filter. Respond with only YES or NO."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.1,  # Low temperature for consistent filtering
+            max_tokens=10,
+            timeout=5.0
+        )
+        
+        result = response.choices[0].message.content.strip().upper()
+        
+        if "YES" in result:
+            return True, "Question is NCIRL-related"
+        elif "NO" in result:
+            return False, "Question is not NCIRL-related"
+        else:
+            # If unclear, allow it (fail open to avoid blocking legitimate queries)
+            return True, "Unclear, allowing question"
+            
+    except Exception as e:
+        print(f"⚠️ Relevance check error: {e}")
+        # On error, allow question (fail open to avoid blocking legitimate queries)
+        return True, f"Error in check: {e}"
+
+
 def get_daily_api_usage():
     """Get today's API usage statistics"""
     conn = get_db_connection()
@@ -348,7 +420,6 @@ def get_daily_api_usage():
         }
     
     return usage_data
-    conn.close()
 
 # ===== AUTHENTICATION DECORATOR =====
 def admin_required(f):
@@ -413,7 +484,7 @@ def performance_showcase():
     """
     return render_template('performance_showcase.html')
 
-# ===== CHAT ROUTE WITH STREAMING =====
+# ===== âœ¨ MODIFIED CHAT ROUTE WITH NCIRL FILTER =====
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
@@ -422,6 +493,46 @@ def chat():
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
         
+        # ✨ STEP 1: Check if question is NCIRL-related
+        groq_client = groq_manager.get_client()
+        is_relevant, reason = is_ncirl_related(user_message, groq_client)
+        
+        print(f"Filter check: '{user_message}' -> {is_relevant} ({reason})")
+        
+        if not is_relevant:
+            # âœ¨ Return polite rejection for non-NCIRL questions
+            def generate_rejection():
+                rejection_message = (
+                    "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
+                    "related questions and general **student/education topics**. \n\n"
+                    "Your question seems to be outside my area of expertise. "
+                    "Could you ask me something about:\n\n"
+                    "• NCIRL admissions, courses, or facilities\n"
+                    "• Student support services\n"
+                    "• Study tips and exam preparation\n"
+                    "• Campus life and accommodation\n"
+                    "• General academic questions\n\n"
+                    "How can I help you with your studies at NCIRL today?"
+                )
+                
+                # Stream the rejection message
+                for char in rejection_message:
+                    yield f"data: {json.dumps({'content': char})}\n\n"
+                    time.sleep(0.01)
+                
+                # Send completion without follow-ups for rejected questions
+                yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
+            
+            return Response(
+                stream_with_context(generate_rejection()),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
+        
+        # âœ… Question is relevant, proceed normally
         knowledge_context = get_knowledge_context()
         
         system_prompt = f"""{knowledge_context}
@@ -478,11 +589,11 @@ When answering:
                         bot_answer=full_response,
                         groq_client=groq_client,
                         use_ai=True,
-                        debug=True  # Set to True to see what's happening
+                        debug=False
                     )
-                    print(f"🎯 Generated follow-ups: {follow_ups}")  # Debug print
+                    print(f"Generated follow-ups: {follow_ups}")
                 except Exception as e:
-                    print(f"❌ Follow-up generation error: {e}")
+                    print(f"Follow-up generation error: {e}")
                     follow_ups = [
                         "What are the library hours?",
                         "How do I contact student support?",
