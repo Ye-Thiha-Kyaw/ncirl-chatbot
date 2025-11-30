@@ -267,16 +267,67 @@ def save_conversation(user_msg, bot_resp):
     """Save conversation to database"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     if USE_POSTGRES:
         cursor.execute('INSERT INTO conversations (user_message, bot_response) VALUES (%s, %s)',
                       (user_msg, bot_resp))
     else:
         cursor.execute('INSERT INTO conversations (user_message, bot_response) VALUES (?, ?)',
                       (user_msg, bot_resp))
-    
+
     conn.commit()
     conn.close()
+
+def search_knowledge_base(user_question):
+    """
+    Search knowledge base for relevant answer FIRST (before AI check)
+
+    Returns:
+        tuple: (found: bool, matches: list or None)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Simple keyword search in questions and answers
+    if USE_POSTGRES:
+        cursor.execute('''
+            SELECT category, question, answer
+            FROM knowledge_base
+            WHERE LOWER(question) LIKE %s
+               OR LOWER(answer) LIKE %s
+            LIMIT 5
+        ''', (f'%{user_question.lower()}%', f'%{user_question.lower()}%'))
+    else:
+        cursor.execute('''
+            SELECT category, question, answer
+            FROM knowledge_base
+            WHERE LOWER(question) LIKE ?
+               OR LOWER(answer) LIKE ?
+            LIMIT 5
+        ''', (f'%{user_question.lower()}%', f'%{user_question.lower()}%'))
+
+    results = cursor.fetchall()
+    conn.close()
+
+    if results:
+        # Found potential matches
+        matches = []
+        for row in results:
+            if isinstance(row, dict):
+                matches.append({
+                    'category': row['category'],
+                    'question': row['question'],
+                    'answer': row['answer']
+                })
+            else:
+                matches.append({
+                    'category': row[0],
+                    'question': row[1],
+                    'answer': row[2]
+                })
+        return True, matches
+
+    return False, None
 
 def log_api_usage(api_key_index, tokens_used, cost):
     """Log API usage to database for real-time tracking"""
@@ -484,56 +535,72 @@ def performance_showcase():
     """
     return render_template('performance_showcase.html')
 
-# ===== âœ¨ MODIFIED CHAT ROUTE WITH NCIRL FILTER =====
+# ===== âœ¨ OPTIMIZED CHAT ROUTE: DATABASE FIRST, THEN FILTER =====
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         user_message = request.json.get('message', '')
-        
+
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
-        
-        # ✨ STEP 1: Check if question is NCIRL-related
-        groq_client = groq_manager.get_client()
-        is_relevant, reason = is_ncirl_related(user_message, groq_client)
-        
-        print(f"Filter check: '{user_message}' -> {is_relevant} ({reason})")
-        
-        if not is_relevant:
-            # âœ¨ Return polite rejection for non-NCIRL questions
-            def generate_rejection():
-                rejection_message = (
-                    "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
-                    "related questions and general **student/education topics**. \n\n"
-                    "Your question seems to be outside my area of expertise. "
-                    "Could you ask me something about:\n\n"
-                    "• NCIRL admissions, courses, or facilities\n"
-                    "• Student support services\n"
-                    "• Study tips and exam preparation\n"
-                    "• Campus life and accommodation\n"
-                    "• General academic questions\n\n"
-                    "How can I help you with your studies at NCIRL today?"
+
+        # ✨ STEP 1: Search database FIRST (FREE & FAST!)
+        found_in_db, db_matches = search_knowledge_base(user_message)
+
+        if found_in_db:
+            # Found in database - skip relevance check!
+            print(f"✅ Found in database: '{user_message}' - Skipping relevance filter")
+
+            # Build context from database matches only
+            knowledge_context = "You are a helpful NCIRL student support assistant. Use this relevant information to answer:\n\n"
+            for match in db_matches:
+                knowledge_context += f"Category: {match['category']}\n"
+                knowledge_context += f"Q: {match['question']}\n"
+                knowledge_context += f"A: {match['answer']}\n\n"
+        else:
+            # Not in database - check if NCIRL-related
+            print(f"❌ Not in database: '{user_message}' - Checking relevance...")
+
+            groq_client = groq_manager.get_client()
+            is_relevant, reason = is_ncirl_related(user_message, groq_client)
+
+            print(f"Relevance check: '{user_message}' -> {is_relevant} ({reason})")
+
+            if not is_relevant:
+                # âœ¨ Return polite rejection for non-NCIRL questions
+                def generate_rejection():
+                    rejection_message = (
+                        "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
+                        "related questions and general **student/education topics**. \n\n"
+                        "Your question seems to be outside my area of expertise. "
+                        "Could you ask me something about:\n\n"
+                        "• NCIRL admissions, courses, or facilities\n"
+                        "• Student support services\n"
+                        "• Study tips and exam preparation\n"
+                        "• Campus life and accommodation\n"
+                        "• General academic questions\n\n"
+                        "How can I help you with your studies at NCIRL today?"
+                    )
+
+                    # Stream the rejection message
+                    for char in rejection_message:
+                        yield f"data: {json.dumps({'content': char})}\n\n"
+                        time.sleep(0.01)
+
+                    # Send completion without follow-ups for rejected questions
+                    yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
+
+                return Response(
+                    stream_with_context(generate_rejection()),
+                    mimetype='text/event-stream',
+                    headers={
+                        'Cache-Control': 'no-cache',
+                        'X-Accel-Buffering': 'no'
+                    }
                 )
-                
-                # Stream the rejection message
-                for char in rejection_message:
-                    yield f"data: {json.dumps({'content': char})}\n\n"
-                    time.sleep(0.01)
-                
-                # Send completion without follow-ups for rejected questions
-                yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
-            
-            return Response(
-                stream_with_context(generate_rejection()),
-                mimetype='text/event-stream',
-                headers={
-                    'Cache-Control': 'no-cache',
-                    'X-Accel-Buffering': 'no'
-                }
-            )
-        
-        # âœ… Question is relevant, proceed normally
-        knowledge_context = get_knowledge_context()
+
+            # âœ… Question is relevant but not in database - load all knowledge
+            knowledge_context = get_knowledge_context()
         
         system_prompt = f"""{knowledge_context}
 
