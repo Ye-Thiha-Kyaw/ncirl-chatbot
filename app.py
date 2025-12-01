@@ -544,63 +544,48 @@ def chat():
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
 
-        # ✨ STEP 1: Search database FIRST (FREE & FAST!)
-        found_in_db, db_matches = search_knowledge_base(user_message)
+        # ✨ STEP 1: Check if question is NCIRL-related FIRST
+        groq_client = groq_manager.get_client()
+        is_relevant, reason = is_ncirl_related(user_message, groq_client)
 
-        if found_in_db:
-            # Found in database - skip relevance check!
-            print(f"✅ Found in database: '{user_message}' - Skipping relevance filter")
+        print(f"Relevance check: '{user_message}' -> {is_relevant} ({reason})")
 
-            # Build context from database matches only
-            knowledge_context = "You are a helpful NCIRL student support assistant. Use this relevant information to answer:\n\n"
-            for match in db_matches:
-                knowledge_context += f"Category: {match['category']}\n"
-                knowledge_context += f"Q: {match['question']}\n"
-                knowledge_context += f"A: {match['answer']}\n\n"
-        else:
-            # Not in database - check if NCIRL-related
-            print(f"❌ Not in database: '{user_message}' - Checking relevance...")
-
-            groq_client = groq_manager.get_client()
-            is_relevant, reason = is_ncirl_related(user_message, groq_client)
-
-            print(f"Relevance check: '{user_message}' -> {is_relevant} ({reason})")
-
-            if not is_relevant:
-                # âœ¨ Return polite rejection for non-NCIRL questions
-                def generate_rejection():
-                    rejection_message = (
-                        "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
-                        "related questions and general **student/education topics**. \n\n"
-                        "Your question seems to be outside my area of expertise. "
-                        "Could you ask me something about:\n\n"
-                        "• NCIRL admissions, courses, or facilities\n"
-                        "• Student support services\n"
-                        "• Study tips and exam preparation\n"
-                        "• Campus life and accommodation\n"
-                        "• General academic questions\n\n"
-                        "How can I help you with your studies at NCIRL today?"
-                    )
-
-                    # Stream the rejection message
-                    for char in rejection_message:
-                        yield f"data: {json.dumps({'content': char})}\n\n"
-                        time.sleep(0.01)
-
-                    # Send completion without follow-ups for rejected questions
-                    yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
-
-                return Response(
-                    stream_with_context(generate_rejection()),
-                    mimetype='text/event-stream',
-                    headers={
-                        'Cache-Control': 'no-cache',
-                        'X-Accel-Buffering': 'no'
-                    }
+        if not is_relevant:
+            # âœ¨ Return polite rejection for non-NCIRL questions
+            def generate_rejection():
+                rejection_message = (
+                    "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
+                    "related questions and general **student/education topics**. \n\n"
+                    "Your question seems to be outside my area of expertise. "
+                    "Could you ask me something about:\n\n"
+                    "• NCIRL admissions, courses, or facilities\n"
+                    "• Student support services\n"
+                    "• Study tips and exam preparation\n"
+                    "• Campus life and accommodation\n"
+                    "• General academic questions\n\n"
+                    "How can I help you with your studies at NCIRL today?"
                 )
 
-            # âœ… Question is relevant but not in database - load all knowledge
-            knowledge_context = get_knowledge_context()
+                # Stream the rejection message
+                for char in rejection_message:
+                    yield f"data: {json.dumps({'content': char})}\n\n"
+                    time.sleep(0.01)
+
+                # Send completion without follow-ups for rejected questions
+                yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
+
+            return Response(
+                stream_with_context(generate_rejection()),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'
+                }
+            )
+
+        # âœ… Question is relevant - load ALL knowledge for best answer
+        print(f"✅ Relevant question - Loading complete knowledge base")
+        knowledge_context = get_knowledge_context()
         
         system_prompt = f"""{knowledge_context}
 
