@@ -247,20 +247,21 @@ init_db()
 
 # ===== HELPER FUNCTIONS =====
 def get_knowledge_context():
-    """Get knowledge base context for AI"""
+    """Get knowledge base context for AI - limited to 50 entries for performance"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT category, question, answer FROM knowledge_base')
+    # LIMIT to 50 entries to prevent slowdown with large databases
+    cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
     knowledge = cursor.fetchall()
     conn.close()
-    
+
     context = "You are a helpful NCIRL (National College of Ireland) student support assistant. Use this knowledge base to answer questions:\n\n"
     for item in knowledge:
         cat = item['category'] if isinstance(item, dict) else item[0]
         q = item['question'] if isinstance(item, dict) else item[1]
         a = item['answer'] if isinstance(item, dict) else item[2]
         context += f"Category: {cat}\nQ: {q}\nA: {a}\n\n"
-    
+
     return context
 
 def save_conversation(user_msg, bot_resp):
@@ -583,9 +584,21 @@ def chat():
                 }
             )
 
-        # âœ… Question is relevant - load ALL knowledge for best answer
-        print(f"✅ Relevant question - Loading complete knowledge base")
-        knowledge_context = get_knowledge_context()
+        # âœ… Question is relevant - search for specific knowledge first
+        found_in_db, db_matches = search_knowledge_base(user_message)
+
+        if found_in_db and len(db_matches) >= 3:
+            # Found good matches - use them for faster, targeted response
+            print(f"✅ Found {len(db_matches)} relevant entries - Using targeted knowledge")
+            knowledge_context = "You are a helpful NCIRL student support assistant. Use this relevant information to answer:\n\n"
+            for match in db_matches:
+                knowledge_context += f"Category: {match['category']}\n"
+                knowledge_context += f"Q: {match['question']}\n"
+                knowledge_context += f"A: {match['answer']}\n\n"
+        else:
+            # Not enough specific matches - load broader context
+            print(f"⚠️ Limited matches - Loading broader knowledge (50 entries)")
+            knowledge_context = get_knowledge_context()
         
         system_prompt = f"""{knowledge_context}
 
