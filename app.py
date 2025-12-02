@@ -352,7 +352,7 @@ def log_api_usage(api_key_index, tokens_used, cost):
     except Exception as e:
         print(f"Error logging API usage: {e}")
 
-# ===== âœ¨ NCIRL RELEVANCE CHECKER (NEW!) =====
+# =====  NCIRL RELEVANCE CHECKER (NEW!) =====
 def is_ncirl_related(user_question, groq_client):
     """
     Check if the question is related to NCIRL using AI
@@ -536,7 +536,8 @@ def performance_showcase():
     """
     return render_template('performance_showcase.html')
 
-# ===== âœ¨ OPTIMIZED CHAT ROUTE: DATABASE FIRST, THEN FILTER =====
+# ===== 
+#  OPTIMIZED CHAT ROUTE: DATABASE FIRST, THEN FILTER =====
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
@@ -552,7 +553,7 @@ def chat():
         print(f"Relevance check: '{user_message}' -> {is_relevant} ({reason})")
 
         if not is_relevant:
-            # âœ¨ Return polite rejection for non-NCIRL questions
+            #  Return polite rejection for non-NCIRL questions
             def generate_rejection():
                 rejection_message = (
                     "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
@@ -584,7 +585,7 @@ def chat():
                 }
             )
 
-        # âœ… Question is relevant - search for specific knowledge first
+        #  Question is relevant - search for specific knowledge first
         found_in_db, db_matches = search_knowledge_base(user_message)
 
         if found_in_db and len(db_matches) >= 3:
