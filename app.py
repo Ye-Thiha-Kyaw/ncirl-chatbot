@@ -246,12 +246,42 @@ def init_db():
 init_db()
 
 # ===== HELPER FUNCTIONS =====
-def get_knowledge_context():
-    """Get knowledge base context for AI - limited to 50 entries for performance"""
+def get_knowledge_context(user_question=None):
+    """Get knowledge base context for AI - searches by keywords or returns 50 entries"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    # LIMIT to 50 entries to prevent slowdown with large databases
-    cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
+
+    if user_question:
+        # Extract important keywords (remove common words)
+        stop_words = {'what', 'how', 'when', 'where', 'who', 'why', 'is', 'are', 'do', 'does', 'can', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'i', 'you', 'my', 'me'}
+        words = user_question.lower().split()
+        keywords = [word for word in words if word not in stop_words and len(word) > 2]
+
+        if keywords:
+            # Build dynamic SQL with OR conditions for each keyword
+            conditions = []
+            params = []
+            for keyword in keywords[:3]:  # Use first 3 important keywords
+                conditions.append("LOWER(question) LIKE ? OR LOWER(answer) LIKE ?")
+                params.extend([f'%{keyword}%', f'%{keyword}%'])
+
+            where_clause = " OR ".join(conditions)
+
+            if USE_POSTGRES:
+                # Convert ? to %s for PostgreSQL
+                where_clause = where_clause.replace('?', '%s')
+                query = f'SELECT category, question, answer FROM knowledge_base WHERE {where_clause} LIMIT 50'
+            else:
+                query = f'SELECT category, question, answer FROM knowledge_base WHERE {where_clause} LIMIT 50'
+
+            cursor.execute(query, params)
+        else:
+            # No valid keywords - load first 50
+            cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
+    else:
+        # No question provided - load first 50
+        cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
+
     knowledge = cursor.fetchall()
     conn.close()
 
@@ -597,9 +627,9 @@ def chat():
                 knowledge_context += f"Q: {match['question']}\n"
                 knowledge_context += f"A: {match['answer']}\n\n"
         else:
-            # Not enough specific matches - load broader context
-            print(f"⚠️ Limited matches - Loading broader knowledge (50 entries)")
-            knowledge_context = get_knowledge_context()
+            # Not enough specific matches - load broader context with keyword search
+            print(f"⚠️ Limited matches - Loading broader knowledge with keywords (50 entries)")
+            knowledge_context = get_knowledge_context(user_message)
         
         system_prompt = f"""{knowledge_context}
 
