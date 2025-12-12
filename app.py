@@ -13,7 +13,8 @@ from functools import wraps
 import secrets
 from hybrid_followup_system import get_hybrid_followup_questions
 
-# ===== POSTGRESQL SUPPORT =====
+# Try to load PostgreSQL support - if it fails we'll just fall back to SQLite
+# This lets us dev locally with SQLite and deploy with Postgres without changing code
 try:
     import psycopg2
     from psycopg2.extras import RealDictCursor
@@ -30,9 +31,10 @@ app = Flask(__name__,
             static_folder='static',
             template_folder='templates')
 
-# ===== SESSION CONFIGURATION FOR AUTHENTICATION =====
+# Setup session stuff for admin login
+# Generate a random secret if one isn't set in .env (fine for dev, but set it in production!)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(16))
-app.permanent_session_lifetime = timedelta(hours=2)  # Session expires after 2 hours
+app.permanent_session_lifetime = timedelta(hours=2)  # logged in sessions last 2 hours, then you gotta login again
 
 CORS(app, resources={
     r"/*": {
@@ -45,10 +47,14 @@ CORS(app, resources={
 # ===== ADMIN AUTHENTICATION =====
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")  # Change in .env file!
 
-# ===== STREAMING SPEED CONTROL =====
-STREAM_DELAY = 0.03  # ← ADJUST THIS: 0.01 = fast, 0.05 = slow, 0 = instant
+# Controls how fast the typing effect is when bot responds
+# 0.03 feels natural, 0.01 is too fast, 0.05 is annoyingly slow
+# Set to 0 if you want instant responses with no animation
+STREAM_DELAY = 0.03
 
-# ===== DATABASE CONFIGURATION =====
+# Figure out which database to use based on what's available
+# If we have a DATABASE_URL and psycopg2 works, use Postgres (production)
+# Otherwise use SQLite (local dev - just creates a file, super simple)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if DATABASE_URL and PSYCOPG2_AVAILABLE:
@@ -62,33 +68,39 @@ else:
 
 # ===== DATABASE CONNECTION HELPER =====
 def get_db_connection():
-    """Get database connection based on environment"""
+    """
+    Returns a database connection - Postgres for production, SQLite for local dev
+    Both are configured to return rows as dicts so we can use the same code for both
+    """
     if USE_POSTGRES:
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         return conn
     else:
         conn = sqlite3.connect('chatbot.db')
-        conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+        conn.row_factory = sqlite3.Row  # makes rows work like dicts instead of tuples
         return conn
 
-# ===== API KEY ROTATION SYSTEM =====
+# This class handles rotating between multiple Groq API keys
+# Free tier has rate limits, so we use 3 keys and swap between them when one hits the limit
+# Pretty simple but saves us from getting blocked when traffic picks up
 class GroqAPIManager:
     def __init__(self):
-        # Load all API keys from .env
+        # Grab all the API keys from environment variables
         self.api_keys = [
             os.environ.get("GROQ_API_KEY_1"),
             os.environ.get("GROQ_API_KEY_2"),
             os.environ.get("GROQ_API_KEY_3"),
         ]
-        # Filter out None values
+        # Remove any that weren't set (in case you only have 1 or 2 keys)
         self.api_keys = [key for key in self.api_keys if key]
-        
+
         if not self.api_keys:
             raise ValueError("No API keys found in .env file")
-        
+
         self.current_key_index = 0
+        # Create client objects for each key upfront so we don't have to recreate them
         self.clients = [Groq(api_key=key) for key in self.api_keys]
-        
+
         print(f"Loaded {len(self.api_keys)} API keys")
     
     def get_client(self):
@@ -96,17 +108,21 @@ class GroqAPIManager:
         return self.clients[self.current_key_index]
     
     def rotate_key(self):
-        """Switch to next API key"""
+        """Move to the next API key in the rotation"""
+        # Modulo math here wraps back to 0 when we hit the end of the list
         self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
         print(f"Rotated to API key {self.current_key_index + 1}/{len(self.api_keys)}")
         return self.clients[self.current_key_index]
     
     def make_request(self, messages, model, temperature, max_tokens, stream=True):
-        """Make API request with automatic key rotation on rate limit"""
+        """
+        Try to make an API request, automatically switching keys if we hit rate limits
+        Will try each key once before giving up
+        """
         for attempt in range(len(self.api_keys)):
             try:
                 client = self.get_client()
-                
+
                 response = client.chat.completions.create(
                     messages=messages,
                     model=model,
@@ -114,26 +130,28 @@ class GroqAPIManager:
                     max_tokens=max_tokens,
                     stream=stream
                 )
-                
+
                 return response
-                
+
             except Exception as e:
                 error_str = str(e).lower()
-                
-                # Check if it's a rate limit error
+
+                # Check if we hit the rate limit (Groq returns different error messages so we check for all of them)
                 if 'rate limit' in error_str or 'quota' in error_str or '429' in error_str:
                     print(f"Rate limit hit on key {self.current_key_index + 1}, rotating...")
-                    
-                    # Try next key if available
+
+                    # Still have keys left to try? Switch to the next one
                     if attempt < len(self.api_keys) - 1:
                         self.rotate_key()
                         continue
                     else:
+                        # Uh oh, we've tried all keys and they're all rate limited
                         raise Exception("All API keys have reached their rate limit")
                 else:
-                    # Different error, don't rotate
+                    # Some other error happened (network issue, invalid request, etc)
+                    # Don't waste time rotating, just fail immediately
                     raise e
-        
+
         raise Exception("All API keys failed")
 
 # Initialize API manager
@@ -247,28 +265,36 @@ init_db()
 
 # ===== HELPER FUNCTIONS =====
 def get_knowledge_context(user_question=None):
-    """Get knowledge base context for AI - searches by keywords or returns 50 entries"""
+    """
+    Pull relevant knowledge from the database to feed to the AI
+    If we have a user question, we extract keywords and search for matches
+    Otherwise we just grab the first 50 entries (happens on general queries)
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
 
     if user_question:
-        # Extract important keywords (remove common words)
+        # Filter out useless words like "what", "the", "is" etc
+        # These don't help with searching and just add noise
         stop_words = {'what', 'how', 'when', 'where', 'who', 'why', 'is', 'are', 'do', 'does', 'can', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'i', 'you', 'my', 'me'}
         words = user_question.lower().split()
+        # Keep words that aren't stop words and are longer than 2 chars
         keywords = [word for word in words if word not in stop_words and len(word) > 2]
 
         if keywords:
-            # Build dynamic SQL with OR conditions for each keyword
+            # Build a SQL query that searches for any of our keywords
+            # We only use the first 3 keywords to keep the query fast
             conditions = []
             params = []
-            for keyword in keywords[:3]:  # Use first 3 important keywords
+            for keyword in keywords[:3]:
                 conditions.append("LOWER(question) LIKE ? OR LOWER(answer) LIKE ?")
                 params.extend([f'%{keyword}%', f'%{keyword}%'])
 
             where_clause = " OR ".join(conditions)
 
             if USE_POSTGRES:
-                # Convert ? to %s for PostgreSQL
+                # Postgres uses %s for placeholders, SQLite uses ?
+                # So we gotta swap them depending on which DB we're using
                 where_clause = where_clause.replace('?', '%s')
                 query = f'SELECT category, question, answer FROM knowledge_base WHERE {where_clause} LIMIT 50'
             else:
@@ -276,17 +302,20 @@ def get_knowledge_context(user_question=None):
 
             cursor.execute(query, params)
         else:
-            # No valid keywords - load first 50
+            # No useful keywords found, just load the first 50 entries
             cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
     else:
-        # No question provided - load first 50
+        # Didn't get a question at all, load 50 entries
         cursor.execute('SELECT category, question, answer FROM knowledge_base LIMIT 50')
 
     knowledge = cursor.fetchall()
     conn.close()
 
+    # Format all the knowledge into a string that the AI can understand
+    # This gets stuffed into the system prompt
     context = "You are a helpful NCIRL (National College of Ireland) student support assistant. Use this knowledge base to answer questions:\n\n"
     for item in knowledge:
+        # Handle both dict-style (Postgres) and tuple-style (SQLite) rows
         cat = item['category'] if isinstance(item, dict) else item[0]
         q = item['question'] if isinstance(item, dict) else item[1]
         a = item['answer'] if isinstance(item, dict) else item[2]
@@ -311,15 +340,16 @@ def save_conversation(user_msg, bot_resp):
 
 def search_knowledge_base(user_question):
     """
-    Search knowledge base for relevant answer FIRST (before AI check)
+    Quick database search to find relevant Q&A entries
+    This runs BEFORE the AI check to see if we have good matches in our knowledge base
+    If we find 3+ matches, we can use a smaller, faster context for the AI
 
-    Returns:
-        tuple: (found: bool, matches: list or None)
+    Returns a tuple: (found_something: bool, list_of_matches or None)
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Simple keyword search in questions and answers
+    # Just do a simple LIKE search for the user's question text
     if USE_POSTGRES:
         cursor.execute('''
             SELECT category, question, answer
@@ -341,9 +371,10 @@ def search_knowledge_base(user_question):
     conn.close()
 
     if results:
-        # Found potential matches
+        # Found some stuff! Format it nicely
         matches = []
         for row in results:
+            # Again, handle both Postgres (dict) and SQLite (tuple) formats
             if isinstance(row, dict):
                 matches.append({
                     'category': row['category'],
@@ -358,37 +389,43 @@ def search_knowledge_base(user_question):
                 })
         return True, matches
 
+    # Didn't find anything useful
     return False, None
 
 def log_api_usage(api_key_index, tokens_used, cost):
-    """Log API usage to database for real-time tracking"""
+    """
+    Save API usage stats to database so we can track costs in the admin panel
+    Honestly pretty important for staying under budget on the free tier
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        # You know the drill by now - different placeholder syntax for each DB
         if USE_POSTGRES:
-            cursor.execute('''INSERT INTO api_usage 
-                           (api_key_index, tokens_used, cost) 
+            cursor.execute('''INSERT INTO api_usage
+                           (api_key_index, tokens_used, cost)
                            VALUES (%s, %s, %s)''',
                           (api_key_index, tokens_used, cost))
         else:
-            cursor.execute('''INSERT INTO api_usage 
-                           (api_key_index, tokens_used, cost) 
+            cursor.execute('''INSERT INTO api_usage
+                           (api_key_index, tokens_used, cost)
                            VALUES (?, ?, ?)''',
                           (api_key_index, tokens_used, cost))
-        
+
         conn.commit()
         conn.close()
     except Exception as e:
+        # If logging fails, don't crash the app - just print it and move on
         print(f"Error logging API usage: {e}")
 
-# =====  NCIRL RELEVANCE CHECKER (NEW!) =====
+# This function filters out random questions that have nothing to do with NCIRL
+# Uses the small/fast Llama model to quickly decide YES or NO
+# Saves us from wasting API credits on "what's the weather" type questions
 def is_ncirl_related(user_question, groq_client):
     """
-    Check if the question is related to NCIRL using AI
-    
-    Returns:
-        tuple: (is_relevant: bool, reason: str)
+    Use AI to check if a question is actually about NCIRL or student stuff
+    Returns (True/False, reason_string)
     """
     
     prompt = f"""You are a filter for NCIRL (National College of Ireland) student support chatbot.
@@ -439,18 +476,19 @@ Your response (one word only):"""
         )
         
         result = response.choices[0].message.content.strip().upper()
-        
+
         if "YES" in result:
             return True, "Question is NCIRL-related"
         elif "NO" in result:
             return False, "Question is not NCIRL-related"
         else:
-            # If unclear, allow it (fail open to avoid blocking legitimate queries)
+            # If the AI gives us something weird, just let the question through
+            # Better to answer a random question than block a real student
             return True, "Unclear, allowing question"
-            
+
     except Exception as e:
         print(f"⚠️ Relevance check error: {e}")
-        # On error, allow question (fail open to avoid blocking legitimate queries)
+        # If something breaks, don't block the user - just let them through
         return True, f"Error in check: {e}"
 
 
@@ -503,15 +541,17 @@ def get_daily_api_usage():
     
     return usage_data
 
-# ===== AUTHENTICATION DECORATOR =====
+# Simple decorator to protect admin pages
+# Just checks if you're logged in, if not kicks you to the login page
 def admin_required(f):
     """
-    Decorator to protect admin routes
-    Redirects to login page if not authenticated
+    Wraps a route to make it admin-only
+    Use it like @admin_required above any route that should need login
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not session.get('admin_logged_in'):
+            # Not logged in? Go to login page
             return redirect(url_for('admin_login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -520,22 +560,27 @@ def admin_required(f):
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     """
-    Admin login page and authentication
+    Handles the admin login page
+    GET = show login form
+    POST = check password and log them in
     """
-    # If already logged in, redirect to admin panel
+    # Already logged in? Just send them straight to admin panel
     if session.get('admin_logged_in'):
         return redirect(url_for('admin'))
-    
+
     if request.method == 'POST':
         password = request.json.get('password')
-        
+
+        # Check if password matches (yeah it's plaintext comparison, fine for a single admin)
         if password == ADMIN_PASSWORD:
             session['admin_logged_in'] = True
-            session.permanent = True  # Makes session persistent
+            session.permanent = True  # keeps them logged in even after closing browser
             return jsonify({'success': True}), 200
         else:
+            # Wrong password
             return jsonify({'success': False, 'error': 'Invalid password'}), 401
-    
+
+    # Show the login form
     return render_template('admin_login.html')
 
 @app.route('/admin/logout')
@@ -566,8 +611,8 @@ def performance_showcase():
     """
     return render_template('performance_showcase.html')
 
-# ===== 
-#  OPTIMIZED CHAT ROUTE: DATABASE FIRST, THEN FILTER =====
+# THE MAIN CHAT ENDPOINT - where all the magic happens
+# Flow: Check relevance -> Search DB -> Generate AI response -> Send follow-ups
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
@@ -576,14 +621,14 @@ def chat():
         if not user_message:
             return jsonify({'error': 'No message provided'}), 400
 
-        # ✨ STEP 1: Check if question is NCIRL-related FIRST
+        # First things first - is this even about NCIRL? No point wasting API calls on "what's the weather"
         groq_client = groq_manager.get_client()
         is_relevant, reason = is_ncirl_related(user_message, groq_client)
 
         print(f"Relevance check: '{user_message}' -> {is_relevant} ({reason})")
 
         if not is_relevant:
-            #  Return polite rejection for non-NCIRL questions
+            # Question is off-topic - send them a polite rejection
             def generate_rejection():
                 rejection_message = (
                     "I'm specifically designed to help with **NCIRL (National College of Ireland)** "
@@ -598,12 +643,12 @@ def chat():
                     "How can I help you with your studies at NCIRL today?"
                 )
 
-                # Stream the rejection message
+                # Still stream it character by character for the typing effect
                 for char in rejection_message:
                     yield f"data: {json.dumps({'content': char})}\n\n"
                     time.sleep(0.01)
 
-                # Send completion without follow-ups for rejected questions
+                # Signal that we're done (no follow-up questions for rejected messages)
                 yield f"data: {json.dumps({'done': True, 'follow_ups': []})}\n\n"
 
             return Response(
@@ -615,11 +660,11 @@ def chat():
                 }
             )
 
-        #  Question is relevant - search for specific knowledge first
+        # OK it's relevant - now search our knowledge base for good matches
         found_in_db, db_matches = search_knowledge_base(user_message)
 
         if found_in_db and len(db_matches) >= 3:
-            # Found good matches - use them for faster, targeted response
+            # Nice! Found 3+ relevant entries, use just those (saves tokens = saves money)
             print(f"✅ Found {len(db_matches)} relevant entries - Using targeted knowledge")
             knowledge_context = "You are a helpful NCIRL student support assistant. Use this relevant information to answer:\n\n"
             for match in db_matches:
@@ -627,7 +672,8 @@ def chat():
                 knowledge_context += f"Q: {match['question']}\n"
                 knowledge_context += f"A: {match['answer']}\n\n"
         else:
-            # Not enough specific matches - load broader context with keyword search
+            # Not many matches, load more context so AI has stuff to work with
+            # This is more expensive but necessary for general questions
             print(f"⚠️ Limited matches - Loading broader knowledge with keywords (50 entries)")
             knowledge_context = get_knowledge_context(user_message)
         
@@ -647,37 +693,41 @@ When answering:
         
         def generate():
             try:
-                # Track which key we're using
+                # Remember which API key we're using so we can log it correctly
                 current_key_index = groq_manager.current_key_index
-                
+
+                # Make the actual API call to Groq (with automatic key rotation if needed)
                 stream = groq_manager.make_request(
                     messages=messages,
-                    model="llama-3.3-70b-versatile",
-                    temperature=0.7,
-                    max_tokens=1024,
-                    stream=True
+                    model="llama-3.3-70b-versatile",  # The big model, gives better responses
+                    temperature=0.7,  # some randomness but not too much
+                    max_tokens=1024,  # cap response length
+                    stream=True  # stream so we can send chunks as they arrive
                 )
-                
+
                 full_response = ""
                 token_count = 0
-                
+
+                # Process each chunk as it arrives
                 for chunk in stream:
                     if chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
                         full_response += content
-                        # Estimate tokens (rough: ~4 chars per token)
+                        # Quick estimate: 4 chars ≈ 1 token (not perfect but close enough)
                         token_count += len(content) // 4
-                        
+
+                        # Send this chunk to the frontend
                         yield f"data: {json.dumps({'content': content})}\n\n"
-                        time.sleep(STREAM_DELAY)
+                        time.sleep(STREAM_DELAY)  # the typing animation delay
                 
-                # Calculate cost ($0.59 per 1M tokens)
+                # Calculate how much this cost us (Groq charges $0.59 per million tokens)
                 cost = (token_count / 1_000_000) * 0.59
-                
-                # Log API usage to database
+
+                # Save this to the database so we can track costs
                 log_api_usage(current_key_index, token_count, cost)
-                
-                # ✨ GENERATE FOLLOW-UP QUESTIONS
+
+                # Generate 3 follow-up question suggestions
+                # Uses the hybrid system (rules first, AI if no match)
                 try:
                     groq_client = groq_manager.get_client()
                     follow_ups = get_hybrid_followup_questions(
@@ -689,17 +739,18 @@ When answering:
                     )
                     print(f"Generated follow-ups: {follow_ups}")
                 except Exception as e:
+                    # If follow-up generation fails, just use generic fallback questions
                     print(f"Follow-up generation error: {e}")
                     follow_ups = [
                         "What are the library hours?",
                         "How do I contact student support?",
                         "What courses are available?"
                     ]
-                
-                # ✨ SEND WITH FOLLOW-UPS
+
+                # Send the completion signal with the follow-up questions
                 yield f"data: {json.dumps({'done': True, 'follow_ups': follow_ups})}\n\n"
-                
-                # Save conversation after streaming completes
+
+                # Log this conversation to the database for the admin to review later
                 save_conversation(user_message, full_response)
                 
             except Exception as e:
@@ -719,35 +770,35 @@ When answering:
         print(f"Chat error: {e}")
         return jsonify({'error': 'An error occurred'}), 500
 
-# ===== API STATUS ROUTES =====
+# Endpoint for the admin panel to check API usage stats
 @app.route('/api-status', methods=['GET'])
 def api_status():
-    """Get real-time API usage statistics"""
-    # Get today's usage from database
+    """Returns JSON with today's API usage - costs, tokens, request counts"""
+    # Pull today's stats from the database
     daily_usage = get_daily_api_usage()
-    
-    # Prepare key data
+
+    # Build the response data
     keys_data = []
     total_requests = 0
     total_tokens = 0
     total_cost = 0.0
-    
+
     for i in range(len(groq_manager.api_keys)):
         usage = daily_usage.get(i, {'tokens': 0, 'requests': 0, 'cost': 0.0})
-        
+
         keys_data.append({
             'name': f'Key {i+1}',
             'requests': usage['requests'],
-            'limit': 14400,  # Groq free tier limit
+            'limit': 14400,  # Groq free tier = 14,400 requests/day per key
             'tokens': usage['tokens'],
             'cost': usage['cost'],
             'is_active': (i == groq_manager.current_key_index)
         })
-        
+
         total_requests += usage['requests']
         total_tokens += usage['tokens']
         total_cost += usage['cost']
-    
+
     return jsonify({
         'activeKey': groq_manager.current_key_index + 1,
         'totalCost': round(total_cost, 6),
@@ -759,7 +810,7 @@ def api_status():
 
 @app.route('/rotate-key', methods=['POST'])
 def manual_rotate():
-    """Manually rotate to next API key"""
+    """Admin can manually switch to the next API key (useful for testing or if one is acting weird)"""
     groq_manager.rotate_key()
     return jsonify({
         'message': 'Key rotated successfully',
@@ -767,79 +818,82 @@ def manual_rotate():
         'total_keys': len(groq_manager.api_keys)
     })
 
-# ===== KNOWLEDGE BASE ROUTES (PROTECTED) =====
+# Admin endpoints for managing the knowledge base
 @app.route('/add_knowledge', methods=['POST'])
 @admin_required
 def add_knowledge():
+    """Add a single Q&A entry through the admin panel"""
     try:
         data = request.json
         category = data.get('category', '')
         question = data.get('question', '')
         answer = data.get('answer', '')
         source = data.get('source', 'User Input')
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        # Same old drill - different syntax for each database
         if USE_POSTGRES:
             cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (%s, %s, %s, %s)',
                           (category, question, answer, source))
         else:
             cursor.execute('INSERT INTO knowledge_base (category, question, answer, source) VALUES (?, ?, ?, ?)',
                           (category, question, answer, source))
-        
+
         conn.commit()
         conn.close()
-        
+
         return jsonify({'message': 'Knowledge added successfully'}), 200
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/upload_csv', methods=['POST'])
 @admin_required
 def upload_csv():
-    """Upload CSV file with bulk knowledge entries"""
+    """Let admins bulk upload Q&A entries via CSV file"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
-        
+
         file = request.files['file']
-        
+
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-        
+
         if not file.filename.endswith('.csv'):
             return jsonify({'error': 'File must be a CSV'}), 400
-        
-        # Read CSV file
+
+        # Parse the uploaded CSV into memory (don't save it to disk)
         stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
         csv_reader = csv.DictReader(stream)
-        
-        # Expected columns: category, question, answer, source
+
+        # Make sure the CSV has the columns we need
         required_columns = ['category', 'question', 'answer']
-        
-        # Check if required columns exist
+
         if not all(col in csv_reader.fieldnames for col in required_columns):
             return jsonify({
                 'error': f'CSV must contain columns: {", ".join(required_columns)}. Optional: source'
             }), 400
-        
+
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
+        # Keep track of what worked and what didn't
         added_count = 0
         skipped_count = 0
         errors = []
-        
+
+        # Process each row (enumerate starts at 2 because row 1 is headers)
         for row_num, row in enumerate(csv_reader, start=2):
             try:
                 category = row.get('category', '').strip()
                 question = row.get('question', '').strip()
                 answer = row.get('answer', '').strip()
                 source = row.get('source', 'CSV Import').strip()
-                
-                # Validate required fields
+
+                # Skip rows with missing data
                 if not category or not question or not answer:
                     skipped_count += 1
                     errors.append(f"Row {row_num}: Missing required fields")
@@ -874,13 +928,16 @@ def upload_csv():
 
 @app.route('/download_sample_csv', methods=['GET'])
 def download_sample_csv():
-    """Download a sample CSV template"""
+    """
+    Download a sample CSV template so admins know what format to use
+    Just returns a hardcoded CSV string with example data
+    """
     sample_csv = """category,question,answer,source
 admissions,What are the application deadlines?,Applications for undergraduate courses close on February 1st. Postgraduate applications are accepted year-round.,NCIRL Admissions
 fees,How much are the tuition fees?,Undergraduate EU students pay approximately €3000 per year. Non-EU and postgraduate fees vary by program.,NCIRL Finance Office
 library,Can I borrow books from the library?,Yes! Students can borrow up to 10 books for 2 weeks. Late returns incur fines of €1 per day.,NCIRL Library
 courses,What programs does NCIRL offer?,NCIRL offers programs in Business Computing IT Accounting Marketing Psychology and more. Visit ncirl.ie for full list.,NCIRL Website"""
-    
+
     return Response(
         sample_csv,
         mimetype="text/csv",
@@ -1003,7 +1060,8 @@ def get_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ===== RUN APPLICATION =====
+# Start the Flask app when running this file directly
+# In production we use gunicorn instead of this
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
