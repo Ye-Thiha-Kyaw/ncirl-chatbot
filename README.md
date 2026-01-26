@@ -449,8 +449,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📧 Contact
 
 **Developer**: Thiha
-**Email**: your.email@example.com
-**LinkedIn**: [Your LinkedIn](https://linkedin.com/in/yourprofile)
+**Email**: yethihakyawythk121@example.com
+**LinkedIn**: https://www.linkedin.com/in/ye-thiha-kyaw-74864a100/)
 **Project Link**: [https://github.com/yourusername/chatbot-project](https://github.com/yourusername/chatbot-project)
 
 ## 🙏 Acknowledgments
