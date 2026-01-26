@@ -451,7 +451,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Developer**: Thiha
 **Email**: yethihakyawythk121@example.com
 **LinkedIn**: https://www.linkedin.com/in/ye-thiha-kyaw-74864a100/)
-**Project Link**: [https://github.com/yourusername/chatbot-project](https://github.com/yourusername/chatbot-project)
+**Project Link**: https://ncirl-chatbot.up.railway.app/
 
 ## 🙏 Acknowledgments
 
