@@ -158,7 +158,7 @@ An intelligent AI-powered chatbot designed to help students at National College 
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/chatbot-project.git
+git clone https://github.com/Ye-Thiha-Kyaw/ncirl-chatbot.git
 cd chatbot-project
 ```
 
@@ -449,7 +449,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📧 Contact
 
 **Developer**: Thiha
-**Email**: yethihakyawythk121@example.com
+**Email**: yethihakyawythk121@gmail.com
 **LinkedIn**: https://www.linkedin.com/in/ye-thiha-kyaw-74864a100/)
 **Project Link**: https://ncirl-chatbot.up.railway.app/
 
