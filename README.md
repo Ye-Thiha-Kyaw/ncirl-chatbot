@@ -10,7 +10,7 @@ An intelligent AI-powered chatbot designed to help students at National College 
 ## 📋 Table of Contents
 
 - [Features](#features)
-- [Demo](#demo)
+
 - [Technology Stack](#technology-stack)
 - [System Architecture](#system-architecture)
 - [Installation](#installation)
