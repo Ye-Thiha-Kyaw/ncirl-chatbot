@@ -63,16 +63,6 @@ An intelligent AI-powered chatbot designed to help students at National College 
 - **Lazy Loading**: On-demand resource loading
 - **API Cost Tracking**: Monitor and optimize usage
 
-## 🎬 Demo
-
-### Chat Interface
-![Chat Interface](docs/images/chat-interface.png)
-
-### Admin Panel
-![Admin Panel](docs/images/admin-panel.png)
-
-### Dark Mode
-![Dark Mode](docs/images/dark-mode.png)
 
 ## 🛠 Technology Stack
 
